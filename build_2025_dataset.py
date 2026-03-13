@@ -92,13 +92,11 @@ def process_single_day(archive_path, extract_base_dir, temp_dir_prefix="temp_ext
 
         print(f"\n处理日期: {date_str}")
 
-        # 创建临时解压目录（使用项目目录）
-        temp_dir = os.path.join(project_root, 'temp_extract')
-        os.makedirs(temp_dir, exist_ok=True)
+        # 解压文件到指定目录
+        temp_extract_dir = os.path.join(project_root, 'temp_extract', date_str)
+        os.makedirs(temp_extract_dir, exist_ok=True)
 
-        # 创建唯一的临时子目录
-        import uuid
-        temp_extract_dir = os.path.join(temp_dir, f"extract_{uuid.uuid4().hex[:8]}")
+        extract_dir = extractor.extract_all(temp_extract_dir)
 
         # 解压文件
         extractor = SevenZipExtractor(archive_path)

@@ -336,7 +336,7 @@ def extract_limit_up_features(df: pd.DataFrame, tick_size: float = 0.01, limit_r
     ]
 
     # 保留原始列中的重要列（code, date, time, current, limit_price等）
-    result_df = df[['time', 'current', 'limit_price'] + feature_columns].copy()
+    result_df = features_df[['time', 'current', 'limit_price'] + feature_columns].copy()
 
     # 如果原始df中有code和date列，也要保留
     if 'code' in df.columns:

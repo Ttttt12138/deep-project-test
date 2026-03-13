@@ -130,8 +130,9 @@ def get_feature_columns(df: pd.DataFrame) -> List[str]:
     Returns:
         特征列名列表
     """
-    # 特征列名以f开头
-    feature_cols = [col for col in df.columns if col.startswith('f')]
+    # 排除基础列：time, current, limit_price, code, date, label
+    base_cols = {'time', 'current', 'limit_price', 'code', 'date', 'label'}
+    feature_cols = [col for col in df.columns if col not in base_cols]
     return feature_cols
 
 
