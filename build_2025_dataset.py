@@ -96,8 +96,6 @@ def process_single_day(archive_path, extract_base_dir, temp_dir_prefix="temp_ext
         temp_extract_dir = os.path.join(project_root, 'temp_extract', date_str)
         os.makedirs(temp_extract_dir, exist_ok=True)
 
-        extract_dir = extractor.extract_all(temp_extract_dir)
-
         # 解压文件
         extractor = SevenZipExtractor(archive_path)
         extract_dir = extractor.extract_all(temp_extract_dir)
