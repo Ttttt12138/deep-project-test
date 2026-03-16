@@ -52,7 +52,32 @@ def split_dataset_by_trading_day(df: pd.DataFrame,
     n_dates = len(unique_dates)
     print(f"共有 {n_dates} 个交易日")
 
-    # 计算划分点
+    # 处理单日数据集的特殊情况
+    if n_dates == 1:
+        print("检测到单日数据集，使用随机划分")
+        from sklearn.model_selection import train_test_split
+
+        # 首先分离出测试集
+        train_val_df, test_df = train_test_split(
+            df, test_size=test_ratio, random_state=random_seed
+        )
+
+        # 然后从剩余数据中分离训练集和验证集
+        val_ratio_adjusted = val_ratio / (train_ratio + val_ratio)
+        train_df, val_df = train_test_split(
+            train_val_df, test_size=val_ratio_adjusted, random_state=random_seed
+        )
+
+        print(f"训练集: {len(train_df):,} 样本 ({len(train_df)/len(df)*100:.1f}%)")
+        print(f"验证集: {len(val_df):,} 样本 ({len(val_df)/len(df)*100:.1f}%)")
+        print(f"测试集: {len(test_df):,} 样本 ({len(test_df)/len(df)*100:.1f}%)")
+
+        print(f"\n日期范围:")
+        print(f"所有数据集: {unique_dates[0]}")
+
+        return train_df, val_df, test_df
+
+    # 计算划分点（多日数据集）
     n_train = int(n_dates * train_ratio)
     n_val = int(n_dates * val_ratio)
 
@@ -76,11 +101,22 @@ def split_dataset_by_trading_day(df: pd.DataFrame,
     print(f"验证集: {len(val_df):,} ({len(val_df)/len(df):.2%})")
     print(f"测试集: {len(test_df):,} ({len(test_df)/len(df):.2%})")
 
-    # 验证日期范围
+    # 验证日期范围（只在有数据时打印）
     print(f"\n日期范围:")
-    print(f"训练集: {train_dates[0]} ~ {train_dates[-1]}")
-    print(f"验证集: {val_dates[0]} ~ {val_dates[-1]}")
-    print(f"测试集: {test_dates[0]} ~ {test_dates[-1]}")
+    if len(train_dates) > 0:
+        print(f"训练集: {train_dates[0]} ~ {train_dates[-1]}")
+    else:
+        print(f"训练集: 无")
+
+    if len(val_dates) > 0:
+        print(f"验证集: {val_dates[0]} ~ {val_dates[-1]}")
+    else:
+        print(f"验证集: 无")
+
+    if len(test_dates) > 0:
+        print(f"测试集: {test_dates[0]} ~ {test_dates[-1]}")
+    else:
+        print(f"测试集: 无")
 
     return train_df, val_df, test_df
 

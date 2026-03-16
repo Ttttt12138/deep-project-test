@@ -49,6 +49,16 @@ from .dataset_split import (
     validate_split
 )
 
+from .sampling import (
+    stratified_negative_sample,
+    balance_sampling,
+    two_layer_negative_sampling,
+    undersample_train_set,
+    get_sampling_statistics,
+    validate_sampling_result,
+    automatic_undersample_if_needed
+)
+
 __all__ = [
     # 旧版数据预处理（已废弃）
     'load_csv_data',
@@ -90,5 +100,14 @@ __all__ = [
     'split_dataset_stratified',
     'save_split_datasets',
     'load_split_datasets',
-    'validate_split'
+    'validate_split',
+
+    # 负样本欠采样模块
+    'stratified_negative_sample',
+    'balance_sampling',
+    'two_layer_negative_sampling',
+    'undersample_train_set',
+    'get_sampling_statistics',
+    'validate_sampling_result',
+    'automatic_undersample_if_needed'
 ]

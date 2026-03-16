@@ -26,6 +26,7 @@ from src.data_processing.limit_up_processor import process_tick_file
 from src.data_processing.stock_utils import determine_stock_type, get_limit_ratio
 from src.data_processing.quality_check import run_quality_checks, print_quality_report
 from src.data_processing.dataset_split import split_dataset_by_trading_day, save_split_datasets
+from src.data_processing.sampling import undersample_train_set
 
 
 def find_2025_data_files(max_months=3):
@@ -307,6 +308,18 @@ def build_full_year_dataset(year="2025", output_path="data/processed/2025_full_d
                 test_ratio=1.0 - train_ratio - val_ratio
             )
 
+            # 【新增】对训练集进行负样本欠采样
+            train_df = undersample_train_set(
+                train_df,
+                dist_col='dist_to_limit',
+                label_col='label',
+                thresholds=(0.01, 0.05),
+                keep_ratios=(1.0, 0.3, 0.05),
+                target_ratio=5.0,
+                random_seed=42,
+                verbose=True
+            )
+
             # 保存划分后的数据集
             split_output_dir = os.path.join(os.path.dirname(output_path), 'split_datasets')
             save_split_datasets(train_df, val_df, test_df, split_output_dir, format='parquet')
@@ -353,17 +366,37 @@ def build_incremental_dataset(year="2025", output_dir="data/processed/2025_incre
         print(f"\n处理批次 {batch_idx // batch_size + 1}: 文件 {batch_idx+1}-{min(batch_idx+batch_size, len(data_files))}")
 
         batch_data = []
-        for archive_path in batch_files:
-            day_df = process_single_day(archive_path, output_dir)
-            if not day_df.empty:
-                batch_data.append(day_df)
+        processed_count = 0
+        failed_count = 0
 
-        # 保存批次结果
+        for archive_path in batch_files:
+            try:
+                print(f"\n处理文件: {archive_path}")
+                day_df = process_single_day(archive_path, output_dir)
+                if not day_df.empty:
+                    batch_data.append(day_df)
+                    processed_count += 1
+                    print(f"✓ 成功处理: {processed_count}/{len(batch_files)}")
+                else:
+                    failed_count += 1
+                    print(f"✗ 无数据: {failed_count}/{len(batch_files)}")
+            except Exception as e:
+                failed_count += 1
+                print(f"✗ 处理失败 {archive_path}: {e}")
+                # 继续处理下一个文件，不中断整个批次
+                continue
+
+        # 保存批次结果（即使只有部分成功）
         if batch_data:
-            batch_df = pd.concat(batch_data, ignore_index=True)
-            batch_path = os.path.join(output_dir, f"batch_{batch_idx // batch_size + 1}.parquet")
-            batch_df.to_parquet(batch_path, index=False)
-            print(f"批次保存完成: {batch_path}")
+            try:
+                batch_df = pd.concat(batch_data, ignore_index=True)
+                batch_path = os.path.join(output_dir, f"batch_{batch_idx // batch_size + 1}.parquet")
+                batch_df.to_parquet(batch_path, index=False)
+                print(f"批次保存完成: {batch_path} (成功: {processed_count}, 失败: {failed_count})")
+            except Exception as e:
+                print(f"批次保存失败: {e}")
+        else:
+            print(f"批次 {batch_idx // batch_size + 1} 没有有效数据")
 
     print(f"\n增量构建完成！共保存 {len(os.listdir(output_dir))} 个批次文件")
     return True

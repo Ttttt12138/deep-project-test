@@ -23,6 +23,7 @@ from src.data_processing.limit_up_processor import process_tick_file
 from src.data_processing.stock_utils import determine_stock_type, get_limit_ratio
 from src.data_processing.quality_check import run_quality_checks, print_quality_report
 from src.data_processing.dataset_split import split_dataset_by_trading_day, save_split_datasets
+from src.data_processing.sampling import undersample_train_set, automatic_undersample_if_needed
 
 
 class DatasetBuilder:
@@ -56,14 +57,16 @@ class DatasetBuilder:
         print(f"  解压完成: {extract_result}")
         return extract_result
 
-    def step2_process_and_cleanup(self, output_path, split_dataset=False, **kwargs):
+    def step2_process_and_cleanup(self, output_path, split_dataset=False, enable_undersampling=True, auto_undersample=False, **kwargs):
         """
         步骤2: 处理数据并清理临时目录
 
         Args:
             output_path: 数据集输出路径
             split_dataset: 是否划分数据集
-            **kwargs: 数据集划分参数
+            enable_undersampling: 是否启用欠采样（默认True）
+            auto_undersample: 是否使用自动检测模式（默认False）
+            **kwargs: 数据集划分和采样参数
 
         Returns:
             处理成功返回True，失败返回False
@@ -84,7 +87,8 @@ class DatasetBuilder:
 
             # 可选：划分数据集
             if split_dataset:
-                self._split_dataset(day_df, **kwargs)
+                self._split_dataset(day_df, enable_undersampling=enable_undersampling,
+                                   auto_undersample=auto_undersample, **kwargs)
 
             return True
 
@@ -161,16 +165,88 @@ class DatasetBuilder:
             pass
         return None
 
-    def _split_dataset(self, df, train_ratio=0.70, val_ratio=0.15):
-        """划分数据集"""
+    def _split_dataset(self, df, train_ratio=0.70, val_ratio=0.15,
+                   enable_undersampling=True, auto_undersample=False,
+                   sampling_thresholds=(0.01, 0.05),
+                   sampling_keep_ratios=(1.0, 0.3, 0.05),
+                   sampling_target_ratio=5.0,
+                   sampling_auto_threshold=8.0,
+                   sampling_random_seed=42):
+        """
+        划分数据集（可选欠采样）
+
+        Args:
+            df: 完整数据集
+            train_ratio: 训练集比例
+            val_ratio: 验证集比例
+            enable_undersampling: 是否启用欠采样
+            auto_undersample: 是否使用自动检测模式
+            sampling_thresholds: 欠采样分层阈值
+            sampling_keep_ratios: 欠采样各层保留率
+            sampling_target_ratio: 欠采样目标比例
+            sampling_auto_threshold: 自动检测阈值
+            sampling_random_seed: 采样随机种子
+        """
+        print(f"\n划分数据集...")
         train_df, val_df, test_df = split_dataset_by_trading_day(
             df, train_ratio=train_ratio, val_ratio=val_ratio,
             test_ratio=1.0 - train_ratio - val_ratio
         )
 
+        print(f"  原始数据集:")
+        print(f"    训练集: {len(train_df):,} 样本")
+        print(f"    验证集: {len(val_df):,} 样本")
+        print(f"    测试集: {len(test_df):,} 样本")
+
+        # 显示原始标签分布
+        if 'label' in train_df.columns:
+            original_stats = get_label_statistics(train_df)
+            print(f"    训练集标签: 正样本 {original_stats['positive_samples']:,} " +
+                  f"({original_stats['positive_ratio']:.4%}), 负样本 {original_stats['negative_samples']:,}")
+            print(f"    训练集比例: 1:{original_stats['imbalance_ratio']:.2f}")
+
+        # 欠采样处理
+        if enable_undersampling:
+            print(f"\n训练集负样本欠采样...")
+            if auto_undersample:
+                # 自动检测模式
+                train_df = automatic_undersample_if_needed(
+                    train_df,
+                    dist_col='dist_to_limit',
+                    label_col='label',
+                    auto_threshold=sampling_auto_threshold,
+                    thresholds=sampling_thresholds,
+                    keep_ratios=sampling_keep_ratios,
+                    target_ratio=sampling_target_ratio,
+                    random_seed=sampling_random_seed,
+                    verbose=True
+                )
+            else:
+                # 强制执行欠采样
+                train_df = undersample_train_set(
+                    train_df,
+                    dist_col='dist_to_limit',
+                    label_col='label',
+                    thresholds=sampling_thresholds,
+                    keep_ratios=sampling_keep_ratios,
+                    target_ratio=sampling_target_ratio,
+                    random_seed=sampling_random_seed,
+                    verbose=True
+                )
+
+            print(f"\n  欠采样后数据集:")
+            print(f"    训练集: {len(train_df):,} 样本 (减少 {(1-len(train_df)/len(df))*100:.1f}%)")
+            if 'label' in train_df.columns:
+                sampled_stats = get_label_statistics(train_df)
+                print(f"    训练集标签: 正样本 {sampled_stats['positive_samples']:,} " +
+                      f"({sampled_stats['positive_ratio']:.4%}), 负样本 {sampled_stats['negative_samples']:,}")
+                print(f"    训练集比例: 1:{sampled_stats['imbalance_ratio']:.2f}")
+        else:
+            print(f"\n跳过欠采样（enable_undersampling=False）")
+
         split_output_dir = os.path.join(self.output_base_dir, 'split_datasets', self.date_str)
         save_split_datasets(train_df, val_df, test_df, split_output_dir, format='parquet')
-        print(f"  数据集已划分: {split_output_dir}")
+        print(f"\n  数据集已划分并保存: {split_output_dir}")
 
     def _cleanup(self):
         """清理临时目录"""
@@ -180,7 +256,8 @@ class DatasetBuilder:
 
 
 def process_single_day_two_step(archive_path, output_dir="d:/Qoder-project/deep project/data",
-                               split_dataset=False, **kwargs):
+                               split_dataset=False, enable_undersampling=True, auto_undersample=False,
+                               **kwargs):
     """
     两步法处理单个交易日数据
 
@@ -188,7 +265,9 @@ def process_single_day_two_step(archive_path, output_dir="d:/Qoder-project/deep 
         archive_path: 7z文件路径
         output_dir: 输出目录（默认：d:/Qoder-project/deep project/data）
         split_dataset: 是否划分数据集
-        **kwargs: 数据集划分参数
+        enable_undersampling: 是否启用欠采样（默认True）
+        auto_undersample: 是否使用自动检测模式（默认False）
+        **kwargs: 数据集划分和采样参数
 
     Returns:
         成功返回数据集路径，失败返回None
@@ -206,6 +285,8 @@ def process_single_day_two_step(archive_path, output_dir="d:/Qoder-project/deep 
         success = builder.step2_process_and_cleanup(
             output_path,
             split_dataset=split_dataset,
+            enable_undersampling=enable_undersampling,
+            auto_undersample=auto_undersample,
             **kwargs
         )
 
@@ -233,6 +314,20 @@ def main():
                        help='输出目录 (默认: d:/Qoder-project/deep project/data)')
     parser.add_argument('--split', action='store_true',
                        help='是否划分数据集')
+
+    # 欠采样配置参数
+    parser.add_argument('--enable-undersampling', action='store_true', default=True,
+                       help='是否启用欠采样 (默认启用)')
+    parser.add_argument('--disable-undersampling', action='store_true',
+                       help='禁用欠采样')
+    parser.add_argument('--auto-undersample', action='store_true',
+                       help='使用自动检测模式 (当比例>1:8时自动采样)')
+    parser.add_argument('--sampling-target-ratio', type=float, default=5.0,
+                       help='欠采样目标比例 (默认: 5.0，即1:5)')
+    parser.add_argument('--sampling-auto-threshold', type=float, default=8.0,
+                       help='自动检测阈值 (默认: 8.0，即比例>1:8时自动采样)')
+
+    # 数据集划分参数
     parser.add_argument('--train-ratio', type=float, default=0.70,
                        help='训练集比例 (默认: 0.70)')
     parser.add_argument('--val-ratio', type=float, default=0.15,
@@ -240,13 +335,20 @@ def main():
 
     args = parser.parse_args()
 
+    # 处理欠采样开关
+    enable_undersampling = args.enable_undersampling and not args.disable_undersampling
+
     # 处理单个交易日
     result = process_single_day_two_step(
         args.input,
         output_dir=args.output,
         split_dataset=args.split,
+        enable_undersampling=enable_undersampling,
+        auto_undersample=args.auto_undersample,
         train_ratio=args.train_ratio,
-        val_ratio=args.val_ratio
+        val_ratio=args.val_ratio,
+        sampling_target_ratio=args.sampling_target_ratio,
+        sampling_auto_threshold=args.sampling_auto_threshold
     )
 
     if result:
