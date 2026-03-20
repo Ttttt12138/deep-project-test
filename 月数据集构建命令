@@ -1,0 +1,61 @@
+ 构建一月数据命令
+
+  推荐命令（完整处理一月数据）
+
+   先测试处理1个文件：
+
+  python scripts/training_set_builder.py --input "2025/1/2025-01-02.7z" --output "d:/Qoder-project/deep      
+  project/data" --mode single
+
+  如果这个命令能正常运行，再运行批量处理：
+
+  python scripts/training_set_builder.py --input-dir "2025/1/" --output "d:/Qoder-project/deep project/data" 
+  --mode batch
+
+
+  自定义欠采样参数
+
+  python scripts/training_set_builder.py \
+    --input-dir "2025/1/" \
+    --output "d:/Qoder-project/deep project/data" \
+    --mode batch \
+    --layer1-thresholds 0.01 0.05 \
+    --layer1-keep-ratios 1.0 0.3 0.05 \
+    --target-ratio 5.0
+
+  📋 参数说明
+
+  - --input-dir: 包含7z文件的目录（"2025/1/"）
+  - --output: 输出目录
+  - --mode: 处理模式（batch表示批量处理）
+  - --max-files: 最大处理文件数（可选，用于测试）
+  - --sample-interval: 采样间隔（可选，用于测试）
+  - --layer1-thresholds: 第一层分层阈值（默认0.01 0.05）
+  - --layer1-keep-ratios: 第一层保留率（默认1.0 0.3 0.05）
+  - --target-ratio: 目标正负比例（默认5.0）
+
+  📊 处理完成后
+
+  处理完成后，您会得到：
+
+  data/
+  ├── daily_train_candidates/      # 候选训练集（未欠采样）
+  ├── daily_train_undersampled/    # 欠采样训练集分片
+  ├── logs/                        # 统计日志
+  └── temp_extract/               # 临时目录（自动清理）
+
+  然后可以合并训练集：
+
+  python scripts/training_set_builder.py \
+    --mode merge \
+    --shards-dir "d:/Qoder-project/deep project/data/daily_train_undersampled" \
+    --merged-output "d:/Qoder-project/deep project/data/merged/multi_day_train.parquet"
+
+  💡 建议
+
+  1. 先测试: 建议先用 --max-files 3 测试几个文件，确保流程正常
+  2. 监控进度: 处理过程会有进度条和详细日志
+  3. 检查日志: 处理完成后检查 logs/ 目录中的统计日志
+  4. 磁盘空间: 确保有足够的磁盘空间存储中间结果
+
+  推荐先用测试命令验证，确认无误后再运行完整的批量处理！
