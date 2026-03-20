@@ -68,6 +68,7 @@ def filter_and_label_events(df, limit_dist_threshold=0.05, debug=True):
     1. 按股票分组，每只股票只保留首次触板
     2. 早盘数据免死金牌：不对前9个Tick进行强制抛弃
     3. 智能NaN处理：不使用.dropna()
+    4. 修复跨股票触板检测bug：按股票分组进行shift操作
 
     Args:
         df: 包含tick数据的DataFrame
@@ -84,35 +85,55 @@ def filter_and_label_events(df, limit_dist_threshold=0.05, debug=True):
     last_price_round = df[price_col].round(2)
     limit_price_round = df['limit_price'].round(2)
 
-    # 获取 T11 (下一秒) 状态
-    next_price_round = last_price_round.shift(-1)
-    next_is_limit = next_price_round >= limit_price_round
-
-    # 获取 T10 (当前秒) 状态
-    current_is_limit = last_price_round >= limit_price_round
-
-    # 检测所有触板瞬间
-    all_touch_events = (next_is_limit & ~current_is_limit).astype(int)
-
-    # 【V3.2核心逻辑】向量化提纯：只保留首次触板
+    # 【关键修复】按股票分组进行触板检测，避免跨股票误检
     df['label'] = 0
 
-    # 提取所有触板的行索引
-    touch_indices = df[all_touch_events == 1].index
+    if 'code' in df.columns:
+        # 多股票场景：按股票分组分别处理
+        for code, group in df.groupby('code'):
+            # 在单股票内进行shift操作
+            group_last_price_round = last_price_round.loc[group.index]
+            group_limit_price_round = limit_price_round.loc[group.index]
 
-    if len(touch_indices) > 0:
-        if 'code' in df.columns:
-            # 向量化：按代码分组，取每个代码的第一个触板索引
-            first_touch_indices = df.loc[touch_indices].groupby('code').head(1).index
-            df.loc[first_touch_indices, 'label'] = 1
-        else:
-            # 如果传入的仅仅是单只股票的 DataFrame
+            # 获取 T11 (下一秒) 状态 - 单股票内
+            next_price_round = group_last_price_round.shift(-1)
+            next_is_limit = next_price_round >= group_limit_price_round
+
+            # 获取 T10 (当前秒) 状态
+            current_is_limit = group_last_price_round >= group_limit_price_round
+
+            # 检测该股票的所有触板瞬间
+            all_touch_events = (next_is_limit & ~current_is_limit).astype(int)
+
+            # 只保留首次触板
+            touch_indices_in_group = group.index[all_touch_events == 1]
+            if len(touch_indices_in_group) > 0:
+                first_touch_idx = touch_indices_in_group[0]  # 取第一个
+                df.loc[first_touch_idx, 'label'] = 1
+    else:
+        # 单股票场景
+        # 获取 T11 (下一秒) 状态
+        next_price_round = last_price_round.shift(-1)
+        next_is_limit = next_price_round >= limit_price_round
+
+        # 获取 T10 (当前秒) 状态
+        current_is_limit = last_price_round >= limit_price_round
+
+        # 检测所有触板瞬间
+        all_touch_events = (next_is_limit & ~current_is_limit).astype(int)
+
+        # 只保留首次触板
+        touch_indices = df[all_touch_events == 1].index
+        if len(touch_indices) > 0:
             first_touch_idx = touch_indices[0]
             df.loc[first_touch_idx, 'label'] = 1
 
     # 重新计算距离
     if 'dist_to_limit' not in df.columns:
         df['dist_to_limit'] = (limit_price_round - last_price_round) / limit_price_round
+
+    # 计算死板状态
+    current_is_limit = last_price_round >= limit_price_round
 
     # 内存过滤掩码设定
     condition_a = df['label'] == 1                            # 正样本（首次触板）

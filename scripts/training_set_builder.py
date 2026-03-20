@@ -408,7 +408,7 @@ class TrainingSetBuilder:
         # 执行欠采样（使用标准版本）
         undersampled_df = undersample_train_set(
             df,
-            dist_col='dist_to_limit',  # 使用基础特征
+            dist_col='dist_to_limit_last',  # 使用窗口末端特征
             label_col='label',
             thresholds=config.get('layer1_thresholds', (0.01, 0.05)),
             keep_ratios=config.get('layer1_keep_ratios', (1.0, 0.3, 0.05)),
