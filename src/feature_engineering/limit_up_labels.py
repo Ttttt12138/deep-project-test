@@ -7,23 +7,26 @@ import pandas as pd
 from typing import Tuple
 
 
-def generate_next_tick_limit_up_label(df: pd.DataFrame) -> pd.DataFrame:
+def generate_next_tick_limit_up_label(df: pd.DataFrame, lookahead_ticks: int = 10) -> pd.DataFrame:
     """
-    生成下一个tick是否涨停的标签
+    生成窗口后第N个tick是否涨停的标签
+    方案A规范：前10个tick窗口 + 第11个tick标签
 
     Args:
         df: 包含tick数据的DataFrame，必须包含current和limit_price列
+        lookahead_ticks: 向前看的tick数，默认为10（表示前10个tick窗口，第11个tick作为标签）
 
     Returns:
-        添加了label列的DataFrame，label=1表示下一个tick涨停
+        添加了label列的DataFrame，label=1表示窗口后第N个tick（第11个tick）涨停
     """
     df = df.copy()
 
-    # 生成标签：下一个tick是否涨停
-    df['label'] = (df['current'].shift(-1) >= df['limit_price']).astype(int)
+    # 生成标签：窗口后第N个tick是否涨停
+    # 前lookahead_ticks个tick作为窗口，第lookahead_ticks+1个tick作为标签
+    df['label'] = (df['current'].shift(-lookahead_ticks) >= df['limit_price']).astype(int)
 
-    # 删除最后一行（没有下一个tick）
-    df = df.iloc[:-1].copy()
+    # 删除最后lookahead_ticks行（没有足够未来tick生成完整窗口和标签）
+    df = df.iloc[:-lookahead_ticks].copy()
 
     return df
 

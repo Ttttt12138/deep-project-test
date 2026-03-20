@@ -10,7 +10,7 @@ from typing import Tuple, Dict, Optional
 
 def stratified_negative_sample(
     df: pd.DataFrame,
-    dist_col: str = 'dist_to_limit',
+    dist_col: str = 'dist_to_limit_last',  # 修改为使用窗口末端特征
     label_col: str = 'label',
     thresholds: Tuple[float, float] = (0.01, 0.05),
     keep_ratios: Tuple[float, float, float] = (1.0, 0.3, 0.05),
@@ -18,16 +18,16 @@ def stratified_negative_sample(
     verbose: bool = False
 ) -> pd.DataFrame:
     """
-    第一层采样：基于 dist_to_limit 的分层筛选
+    第一层采样：基于窗口末端 dist_to_limit 的分层筛选
 
-    对负样本根据距离涨停价的远近进行分层，每层保留不同比例：
-    - 接近涨停 (dist_to_limit <= 1%): 保留 100%
-    - 中等距离 (1% < dist_to_limit <= 5%): 保留 30%
-    - 远离涨停 (dist_to_limit > 5%): 保留 5%
+    对负样本根据窗口末端距离涨停价的远近进行分层，每层保留不同比例：
+    - 接近涨停 (dist_to_limit_last <= 1%): 保留 100%
+    - 中等距离 (1% < dist_to_limit_last <= 5%): 保留 30%
+    - 远离涨停 (dist_to_limit_last > 5%): 保留 5%
 
     Args:
-        df: 输入数据集
-        dist_col: 距离涨停价的列名
+        df: 输入数据集（窗口样本）
+        dist_col: 距离涨停价的列名（默认使用窗口末端特征）
         label_col: 标签列名
         thresholds: 分层阈值，分别为 (接近阈值, 中等阈值)
         keep_ratios: 各层保留率，分别为 (接近保留率, 中等保留率, 远离保留率)
@@ -164,7 +164,7 @@ def balance_sampling(
 
 def two_layer_negative_sampling(
     df: pd.DataFrame,
-    dist_col: str = 'dist_to_limit',
+    dist_col: str = 'dist_to_limit_last',  # 修改为使用窗口末端特征
     label_col: str = 'label',
     thresholds: Tuple[float, float] = (0.01, 0.05),
     keep_ratios: Tuple[float, float, float] = (1.0, 0.3, 0.05),
@@ -173,14 +173,14 @@ def two_layer_negative_sampling(
     verbose: bool = True
 ) -> pd.DataFrame:
     """
-    完整的两层负样本欠采样流程
+    完整的两层负样本欠采样流程（窗口样本版本）
 
-    1. 第一层：基于 dist_to_limit 分层筛选
+    1. 第一层：基于窗口末端 dist_to_limit_last 分层筛选
     2. 第二层：随机采样控制正负样本比例到目标值
 
     Args:
-        df: 输入数据集
-        dist_col: 距离涨停价的列名
+        df: 输入数据集（窗口样本）
+        dist_col: 距离涨停价的列名（默认使用窗口末端特征）
         label_col: 标签列名
         thresholds: 分层阈值
         keep_ratios: 各层保留率
@@ -235,7 +235,7 @@ def two_layer_negative_sampling(
 
 def undersample_train_set(
     df: pd.DataFrame,
-    dist_col: str = 'dist_to_limit',
+    dist_col: str = 'dist_to_limit_last',  # 修改为使用窗口末端特征
     label_col: str = 'label',
     thresholds: Tuple[float, float] = (0.01, 0.05),
     keep_ratios: Tuple[float, float, float] = (1.0, 0.3, 0.05),
@@ -244,13 +244,13 @@ def undersample_train_set(
     verbose: bool = True
 ) -> pd.DataFrame:
     """
-    对训练集进行负样本欠采样的封装函数
+    对训练集进行负样本欠采样的封装函数（窗口样本版本）
 
-    明确标识仅用于训练集，避免误用
+    明确标识仅用于训练集，避免误用。现在适配窗口样本，使用窗口末端特征进行采样。
 
     Args:
-        df: 训练集数据
-        dist_col: 距离涨停价的列名
+        df: 训练集数据（窗口样本）
+        dist_col: 距离涨停价的列名（默认使用窗口末端特征 dist_to_limit_last）
         label_col: 标签列名
         thresholds: 分层阈值
         keep_ratios: 各层保留率
@@ -263,7 +263,7 @@ def undersample_train_set(
     """
     if verbose:
         print("\n" + "="*80)
-        print("训练集负样本欠采样（严格仅用于训练集）")
+        print("训练集负样本欠采样（严格仅用于训练集，窗口样本模式）")
         print("="*80)
 
     result = two_layer_negative_sampling(

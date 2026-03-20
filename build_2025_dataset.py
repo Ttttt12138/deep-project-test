@@ -8,6 +8,7 @@ import sys
 import glob
 from pathlib import Path
 from datetime import datetime
+from typing import Tuple
 import pandas as pd
 from tqdm import tqdm
 
@@ -19,10 +20,13 @@ if project_root not in sys.path:
 from scripts.extract_7z import SevenZipExtractor
 from scripts.build_dataset import (
     process_single_stock_csv, save_dataset, get_feature_columns,
-    generate_next_tick_limit_up_label, get_label_statistics
+    get_label_statistics
+)
+from src.feature_engineering.event_driven_labels import (
+    generate_event_driven_label  # V3.2首次触板逻辑
 )
 from src.feature_engineering.limit_up_features import extract_limit_up_features
-from src.data_processing.limit_up_processor import process_tick_file
+from src.data_processing.limit_up_processor_optimized import process_tick_file_optimized as process_tick_file
 from src.data_processing.stock_utils import determine_stock_type, get_limit_ratio
 from src.data_processing.quality_check import run_quality_checks, print_quality_report
 from src.data_processing.dataset_split import split_dataset_by_trading_day, save_split_datasets
@@ -174,8 +178,8 @@ def process_single_day(archive_path, extract_base_dir, temp_dir_prefix="temp_ext
                 # 提取特征（传入涨停比例）
                 df = extract_limit_up_features(df, tick_size=0.01, limit_ratio=limit_ratio)
 
-                # 生成标签
-                df = generate_next_tick_limit_up_label(df)
+                # 生成标签（V3.2首次触板逻辑）
+                df = generate_event_driven_label(df)  # 直接使用V3.2
 
                 all_stocks_data.append(df)
 
@@ -204,6 +208,7 @@ def process_single_day(archive_path, extract_base_dir, temp_dir_prefix="temp_ext
 def build_full_year_dataset(year="2025", output_path="data/processed/2025_full_dataset.csv",
                            max_files=None, sample_files=None,
                            split_dataset=False, train_ratio=0.70, val_ratio=0.15,
+                           train_date_range=None, val_date_range=None, test_date_range=None,
                            max_months=3):
     """
     构建全年数据集
@@ -216,6 +221,9 @@ def build_full_year_dataset(year="2025", output_path="data/processed/2025_full_d
         split_dataset: 是否进行数据集划分
         train_ratio: 训练集比例
         val_ratio: 验证集比例
+        train_date_range: 训练集日期范围
+        val_date_range: 验证集日期范围
+        test_date_range: 测试集日期范围
         max_months: 最大月份数（默认3，表示前3个月）
     """
     print("="*80)
@@ -301,11 +309,25 @@ def build_full_year_dataset(year="2025", output_path="data/processed/2025_full_d
             print("数据集划分")
             print("="*80)
 
+            # 检测使用哪种模式
+            use_date_range_mode = (train_date_range is not None or
+                                  val_date_range is not None or
+                                  test_date_range is not None)
+
+            if use_date_range_mode:
+                print(f"使用日期范围模式")
+                print(f"  训练集范围: {train_date_range}")
+                print(f"  验证集范围: {val_date_range}")
+                print(f"  测试集范围: {test_date_range}")
+
             train_df, val_df, test_df = split_dataset_by_trading_day(
                 final_df,
                 train_ratio=train_ratio,
                 val_ratio=val_ratio,
-                test_ratio=1.0 - train_ratio - val_ratio
+                test_ratio=1.0 - train_ratio - val_ratio,
+                train_date_range=train_date_range,
+                val_date_range=val_date_range,
+                test_date_range=test_date_range
             )
 
             # 【新增】对训练集进行负样本欠采样
@@ -460,7 +482,35 @@ def main():
     parser.add_argument('--val-ratio', type=float, default=0.15, help='验证集比例')
     parser.add_argument('--max-months', type=int, default=3, help='最大月份数（默认3）')
 
+    # 日期范围划分参数
+    parser.add_argument('--train-date-start', type=str,
+                       help='训练集开始日期 (YYYY-MM-DD)')
+    parser.add_argument('--train-date-end', type=str,
+                       help='训练集结束日期 (YYYY-MM-DD)')
+    parser.add_argument('--val-date-start', type=str,
+                       help='验证集开始日期 (YYYY-MM-DD)')
+    parser.add_argument('--val-date-end', type=str,
+                       help='验证集结束日期 (YYYY-MM-DD)')
+    parser.add_argument('--test-date-start', type=str,
+                       help='测试集开始日期 (YYYY-MM-DD)')
+    parser.add_argument('--test-date-end', type=str,
+                       help='测试集结束日期 (YYYY-MM-DD)')
+
     args = parser.parse_args()
+
+    # 构建日期范围参数
+    train_date_range = None
+    val_date_range = None
+    test_date_range = None
+
+    if args.train_date_start and args.train_date_end:
+        train_date_range = (args.train_date_start, args.train_date_end)
+
+    if args.val_date_start and args.val_date_end:
+        val_date_range = (args.val_date_start, args.val_date_end)
+
+    if args.test_date_start and args.test_date_end:
+        test_date_range = (args.test_date_start, args.test_date_end)
 
     if args.mode == 'full':
         # 构建完整数据集
@@ -472,6 +522,9 @@ def main():
             split_dataset=args.split_dataset,
             train_ratio=args.train_ratio,
             val_ratio=args.val_ratio,
+            train_date_range=train_date_range,
+            val_date_range=val_date_range,
+            test_date_range=test_date_range,
             max_months=args.max_months
         )
     elif args.mode == 'incremental':

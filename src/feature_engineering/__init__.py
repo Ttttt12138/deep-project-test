@@ -1,30 +1,6 @@
 """
-特征工程包
+特征工程包 - V3.2一板一样本版本
 """
-
-# 旧版特征工程（已废弃）
-from .price_features import (
-    extract_price_features,
-    extract_price_features_vectorized
-)
-
-from .volume_features import (
-    extract_volume_features,
-    extract_volume_features_vectorized
-)
-
-from .orderbook_features import (
-    extract_orderbook_features,
-    extract_orderbook_features_vectorized
-)
-
-from .label_generation import (
-    generate_return_labels,
-    generate_breakout_label,
-    generate_all_labels,
-    generate_labels_vectorized,
-    get_label_definitions
-)
 
 # 新版涨停特征工程
 from .limit_up_features import (
@@ -46,6 +22,20 @@ from .limit_up_features import (
     extract_limit_up_features
 )
 
+# V3.2首次触板标签（新核心模块 - 一板一样本）
+from .event_driven_labels import (
+    generate_event_driven_label,  # V3.2首次触板逻辑
+    filter_and_label_events,       # V3.2首次触板过滤
+    get_event_statistics,
+    validate_event_driven_labels
+)
+
+# V3.2事件窗口构建器（新核心模块 - 一板一样本）
+from .event_window_builder import (
+    EventWindowBuilder  # V3.2一板一样本逻辑
+)
+
+# 旧版标签生成（保留向后兼容）
 from .limit_up_labels import (
     generate_next_tick_limit_up_label,
     generate_limit_up_label_with_probability,
@@ -54,31 +44,7 @@ from .limit_up_labels import (
     validate_labels
 )
 
-# 旧版Pipeline（已废弃）
-from .pipeline import (
-    process_single_window,
-    build_feature_dataset,
-    full_pipeline,
-    split_features_labels,
-    get_feature_info,
-    save_feature_dataset,
-    load_feature_dataset
-)
-
 __all__ = [
-    # 旧版特征工程（已废弃）
-    'extract_price_features',
-    'extract_price_features_vectorized',
-    'extract_volume_features',
-    'extract_volume_features_vectorized',
-    'extract_orderbook_features',
-    'extract_orderbook_features_vectorized',
-    'generate_return_labels',
-    'generate_breakout_label',
-    'generate_all_labels',
-    'generate_labels_vectorized',
-    'get_label_definitions',
-
     # 新版涨停特征
     'calculate_distance_to_limit_ratio',
     'calculate_ticks_to_limit',
@@ -97,19 +63,19 @@ __all__ = [
     'calculate_recent_money_change',
     'extract_limit_up_features',
 
-    # 新版涨停标签
+    # V3.2首次触板标签（新核心 - 一板一样本）
+    'generate_event_driven_label',
+    'filter_and_label_events',
+    'get_event_statistics',
+    'validate_event_driven_labels',
+
+    # V3.2事件窗口构建器（新核心 - 一板一样本）
+    'EventWindowBuilder',
+
+    # 旧版标签生成（向后兼容）
     'generate_next_tick_limit_up_label',
     'generate_limit_up_label_with_probability',
     'get_label_statistics',
     'calculate_class_weights',
-    'validate_labels',
-
-    # 旧版Pipeline（已废弃）
-    'process_single_window',
-    'build_feature_dataset',
-    'full_pipeline',
-    'split_features_labels',
-    'get_feature_info',
-    'save_feature_dataset',
-    'load_feature_dataset'
+    'validate_labels'
 ]
