@@ -36,12 +36,12 @@ def determine_stock_type(stock_code: str) -> str:
     if stock_code.startswith('30'):
         return 'gem'
 
-    # 判断科创板（688xxx）
-    if stock_code.startswith('688'):
+    # 判断科创板（688xxx, 689xxx）
+    if stock_code.startswith(('688', '689')):
         return 'kcb'
 
-    # 判断北交所（8xxxx, 4xxxx）
-    if stock_code.startswith(('8', '4')):
+    # 判断北交所（8xxxx, 4xxxx, 9xxxx）
+    if stock_code.startswith(('8', '4', '9')):
         return 'bse'
 
     # 默认为普通股

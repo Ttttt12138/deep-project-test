@@ -108,7 +108,7 @@ def balance_sampling(
     target_ratio: float = 5.0,
     label_col: str = 'label',
     random_seed: Optional[int] = 42,
-    min_positive_samples: int = 100
+    min_positive_samples: int = 10
 ) -> pd.DataFrame:
     """
     第二层采样：随机采样控制正负样本比例
@@ -215,7 +215,8 @@ def two_layer_negative_sampling(
     # 第二层采样
     df_after_layer2 = balance_sampling(
         df_after_layer1, target_ratio=target_ratio,
-        label_col=label_col, random_seed=random_seed
+        label_col=label_col, random_seed=random_seed,
+        min_positive_samples=10
     )
 
     # 获取最终统计信息

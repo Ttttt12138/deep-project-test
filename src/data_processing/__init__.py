@@ -17,6 +17,7 @@ from .limit_up_processor import (
     convert_time_column,
     sort_by_time,
     calculate_limit_price,
+    calculate_floor_price,
     validate_required_columns,
     create_mock_tick_data,
     process_tick_file
@@ -71,6 +72,7 @@ __all__ = [
     'convert_time_column',
     'sort_by_time',
     'calculate_limit_price',
+    'calculate_floor_price',
     'validate_required_columns',
     'create_mock_tick_data',
     'process_tick_file',

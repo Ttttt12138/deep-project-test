@@ -122,6 +122,11 @@ def process_single_day(archive_path, extract_base_dir, temp_dir_prefix="temp_ext
 
                 # 根据股票代码动态确定涨停比例
                 stock_type = determine_stock_type(stock_code)
+
+                # 【只保留主板股票】过滤掉创业板、科创板、北交所
+                if stock_type != 'normal':
+                    continue
+
                 limit_ratio = get_limit_ratio(stock_type)
 
                 # 获取基准价格（从盘口价格获取，因为没有昨收价）

@@ -165,6 +165,12 @@ class TrainingSetBuilder:
                 try:
                     stock_code = csv_file.stem
                     stock_type = determine_stock_type(stock_code)
+
+                    # 【只保留主板股票】过滤掉创业板、科创板、北交所
+                    if stock_type != 'normal':
+                        skipped_stocks += 1
+                        continue
+
                     limit_ratio = get_limit_ratio(stock_type)
 
                     # 获取基准价格

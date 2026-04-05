@@ -94,6 +94,11 @@ def process_single_stock_optimized(csv_file_path: str,
 
         # 获取股票类型和涨停比例（快速查询）
         stock_type = determine_stock_type(stock_code)
+
+        # 【只保留主板股票】过滤掉创业板、科创板、北交所
+        if stock_type != 'normal':
+            return stock_code, pd.DataFrame(), "非主板股票"
+
         limit_ratio = get_limit_ratio(stock_type)
 
         # 获取基准价格

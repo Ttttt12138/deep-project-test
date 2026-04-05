@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from typing import Tuple, Dict
 import os
+from decimal import Decimal, ROUND_HALF_UP
 
 
 def load_tick_csv(file_path: str) -> pd.DataFrame:
@@ -173,7 +174,7 @@ def sort_by_time(df: pd.DataFrame, time_col: str = 'time') -> pd.DataFrame:
 
 def calculate_limit_price(preclose: float, limit_ratio: float) -> float:
     """
-    计算涨停价
+    计算涨停价（使用标准四舍五入取整到分位）
 
     Args:
         preclose: 昨收价
@@ -182,7 +183,23 @@ def calculate_limit_price(preclose: float, limit_ratio: float) -> float:
     Returns:
         涨停价
     """
-    return round(preclose * (1 + limit_ratio), 2)
+    d = Decimal(str(preclose * (1 + limit_ratio)))
+    return float(d.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
+
+def calculate_floor_price(preclose: float, limit_ratio: float) -> float:
+    """
+    计算跌停价（使用标准四舍五入取整到分位）
+
+    Args:
+        preclose: 昨收价
+        limit_ratio: 跌停比例（与涨停比例相同）
+
+    Returns:
+        跌停价
+    """
+    d = Decimal(str(preclose * (1 - limit_ratio)))
+    return float(d.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
 
 
 def validate_required_columns(df: pd.DataFrame, required_cols: list) -> bool:
