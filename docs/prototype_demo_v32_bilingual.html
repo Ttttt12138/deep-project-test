@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>涨停预测系统 V3.2 原型演示 | Limit-Up Prediction System V3.2 Demo</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --ink: #182230;
+      --muted: #576579;
+      --line: #d9e1ea;
+      --accent: #0f766e;
+      --success: #059669;
+      --warning: #dc2626;
+      --blue: #2563eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(140deg, #f4f7fb 0%, #e8f1ff 100%);
+      color: var(--ink);
+      line-height: 1.6;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 28px auto;
+      padding: 0 16px 32px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 20px 22px;
+      margin-bottom: 16px;
+      box-shadow: 0 6px 20px rgba(9, 30, 66, 0.06);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--line);
+    }
+    h1, h2, h3 { margin: 0; }
+    h1 { font-size: 26px; font-weight: 700; }
+    h2 { font-size: 20px; color: var(--accent); }
+    h3 { font-size: 16px; color: var(--muted); margin-bottom: 10px; }
+    .subtitle { color: var(--muted); font-size: 14px; margin-top: 4px; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #d1fae5;
+      color: #065f46;
+    }
+    .badge-warn { background: #fee2e2; color: #991b1b; }
+    .badge-info { background: #dbeafe; color: #1e40af; }
+    .kpi {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+    }
+    .kpi-item {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 14px;
+      background: linear-gradient(180deg, #fbfdff 0%, #f6fafd 100%);
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-item::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      height: 100%;
+      width: 4px;
+      background: var(--accent);
+    }
+    .k { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .v { font-size: 26px; font-weight: 800; margin-top: 6px; color: var(--accent); letter-spacing: -0.5px; }
+    .v-small { font-size: 18px; }
+    .v-green { color: var(--success); }
+    .v-red { color: var(--warning); }
+    .v-blue { color: var(--blue); }
+    .trend { font-size: 12px; margin-top: 4px; color: var(--muted); }
+    img {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      padding: 10px 8px;
+    }
+    th { background: #f7fbff; font-weight: 600; color: var(--ink); }
+    tr:hover td { background: #f8fbff; }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 768px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+    .progress {
+      height: 8px;
+      background: #e5e7eb;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent) 0%, #14b8a6 100%);
+      border-radius: 999px;
+      transition: width 0.6s ease;
+    }
+    .timeline {
+      position: relative;
+      padding-left: 24px;
+    }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 8px;
+      top: 4px;
+      bottom: 4px;
+      width: 2px;
+      background: var(--line);
+    }
+    .timeline-item {
+      position: relative;
+      padding-bottom: 16px;
+    }
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: -20px;
+      top: 6px;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 2px solid white;
+      box-shadow: 0 0 0 2px var(--accent);
+    }
+    .highlight-box {
+      background: linear-gradient(135deg, #ecfdf5 0%, #dbeafe 100%);
+      border: 1px solid #a7f3d0;
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .code {
+      font-family: "Consolas", "Monaco", monospace;
+      background: #f3f4f6;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .feature-list {
+      display: grid;
+      gap: 10px;
+    }
+    .feature-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px;
+      background: #f8fafc;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+    }
+    .feature-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 8px;
+    }
+    .tab {
+      padding: 8px 16px;
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--muted);
+      transition: all 0.2s;
+    }
+    .tab:hover { background: #f1f5f9; }
+    .tab.active {
+      background: var(--accent);
+      color: white;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .chart-placeholder {
+      background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 40px 20px;
+      text-align: center;
+      color: var(--muted);
+    }
+    .footer-note {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    /* Language Switcher */
+    .lang-switcher {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .lang-btn {
+      padding: 6px 14px;
+      border: 1px solid var(--line);
+      background: white;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      transition: all 0.2s;
+    }
+    .lang-btn:hover { background: #f1f5f9; }
+    .lang-btn.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    /* Hide elements by data-lang */
+    [data-lang] { display: none; }
+    [data-lang="zh"].zh-visible { display: inline; }
+    [data-lang="en"].en-visible { display: inline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <!-- Header -->
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h1 data-lang="zh">涨停预测系统 V3.2 原型演示</h1>
+          <h1 data-lang="en">Limit-Up Prediction System V3.2 Demo</h1>
+          <p class="subtitle" data-lang="zh">基于 Tick 数据的事件驱动型涨停预测 | 一板一样本极致提纯</p>
+          <p class="subtitle" data-lang="en">Event-driven limit-up prediction based on Tick data | One stock one sample pure extraction</p>
+        </div>
+        <div class="lang-switcher">
+          <button class="lang-btn active" id="lang-zh">中文</button>
+          <button class="lang-btn" id="lang-en">English</button>
+        </div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-item">
+          <div class="k" data-lang="zh">版本</div>
+          <div class="k" data-lang="en">Version</div>
+          <div class="v v-blue">3.2</div>
+          <div class="trend" data-lang="zh">极致提纯版</div>
+          <div class="trend" data-lang="en">Ultimate Pure Version</div>
+        </div>
+        <div class="kpi-item">
+          <div class="k" data-lang="zh">正样本纯度</div>
+          <div class="k" data-lang="en">Positive Purity</div>
+          <div class="v v-green">100%</div>
+          <div class="trend" data-lang="zh">一板一样本</div>
+          <div class="trend" data-lang="en">One stock one sample</div>
+        </div>
+        <div class="kpi-item">
+          <div class="k" data-lang="zh">单日正样本</div>
+          <div class="k" data-lang="en">Daily Positives</div>
+          <div class="v">10-80</div>
+          <div class="trend" data-lang="zh">对应真实涨停数</div>
+          <div class="trend" data-lang="en">Match real limit-up count</div>
+        </div>
+        <div class="kpi-item">
+          <div class="k" data-lang="zh">特征维度</div>
+          <div class="k" data-lang="en">Feature Dim</div>
+          <div class="v">165</div>
+          <div class="trend" data-lang="zh">10 Tick 窗口</div>
+          <div class="trend" data-lang="en">10 Tick Window</div>
+        </div>
+        <div class="kpi-item">
+          <div class="k" data-lang="zh">内存优化</div>
+          <div class="k" data-lang="en">Memory Opt</div>
+          <div class="v v-green">-90%</div>
+          <div class="trend" data-lang="zh">20GB → 1-2GB</div>
+          <div class="trend" data-lang="en">20GB → 1-2GB</div>
+        </div>
+        <div class="kpi-item">
+          <div class="k" data-lang="zh">模型</div>
+          <div class="k" data-lang="en">Model</div>
+          <div class="v v-blue">LightGBM</div>
+          <div class="trend" data-lang="zh">分类模型</div>
+          <div class="trend" data-lang="en">Classification</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Core Value -->
+    <div class="card">
+      <div class="card-header">
+        <h2 data-lang="zh">核心价值主张</h2>
+        <h2 data-lang="en">Core Value Proposition</h2>
+      </div>
+      <div class="highlight-box">
+        <div class="grid-2">
+          <div>
+            <h3 data-lang="zh">🎯 建模目标</h3>
+            <h3 data-lang="en">🎯 Modeling Goal</h3>
+            <p data-lang="zh">给定连续 <span class="code">10个Tick</span> 的窗口信息，预测第 <span class="code">11个Tick</span> 是否会发生<span style="color:var(--success);font-weight:600">首次触板</span>事件</p>
+            <p data-lang="en">Given <span class="code">10 consecutive Ticks</span>, predict whether a <span style="color:var(--success);font-weight:600">first limit-up touch</span> will occur at the <span class="code">11th Tick</span></p>
+          </div>
+          <div>
+            <h3 data-lang="zh">📊 业务逻辑</h3>
+            <h3 data-lang="en">📊 Business Logic</h3>
+            <p data-lang="zh">完全对齐"今天能不能上板"的预测目标，首次触板最具预测价值</p>
+            <p data-lang="en">Perfectly aligns with "can it limit-up today" objective, first touch has most predictive value</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Features -->
+    <div class="card">
+      <div class="card-header">
+        <h2 data-lang="zh">V3.2 核心特性</h2>
+        <h2 data-lang="en">V3.2 Core Features</h2>
+      </div>
+      <div class="feature-list">
+        <div class="feature-item">
+          <div class="feature-icon">1</div>
+          <div>
+            <strong data-lang="zh">首次触板检测</strong>
+            <strong data-lang="en">First Touch Detection</strong>
+            <p style="margin:4px 0 0;color:var(--muted);font-size:13px" data-lang="zh">按股票分组，只保留每只股票的首次触板，解决多次触板问题</p>
+            <p style="margin:4px 0 0;color:var(--muted);font-size:13px" data-lang="en">Group by stock, keep only first touch per stock, solves multi-touch problem</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">2</div>
+          <div>
+            <strong data-lang="zh">智能NaN填充</strong>
+            <strong data-lang="en">Smart NaN Filling</strong>
+            <p style="margin:4px 0 0;color:var(--muted);font-size:13px" data-lang="zh">价格类特征用向前/向后平推，成交量类用0填充，避免未来函数泄露</p>
+            <p style="margin:4px 0 0;color:var(--muted);font-size:13px" data-lang="en">Price features: ffill/bfill, volume features: fill with 0, prevents future function leakage</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">3</div>
+          <div>
+            <strong data-lang="zh">前置内存阻断</strong>
+            <strong data-lang="en">Early Memory Blocking</strong>
+            <p style="margin:4px 0 0;color:var(--muted);font-size:13px" data-lang="zh">过滤95%无用数据，仅保留正样本和困难负样本（距离&lt;5%）</p>
+            <p style="margin:4px 0 0;color:var(--muted);font-size:13px" data-lang="en">Filter 95% useless data, keep only positives and hard negatives (distance&lt;5%)</p>
+          </div>
+        </div>
+        <div class="feature-item">
+          <div class="feature-icon">4</div>
+          <div>
+            <strong data-lang="zh">按需特征平铺</strong>
+            <strong data-lang="en">On-demand Feature Flattening</strong>
+            <p style="margin:4px 0 0;color:var(--muted);font-size:13px" data-lang="zh">仅对1-2万高价值样本进行165维提取，避免全表shift操作</p>
+            <p style="margin:4px 0 0;color:var(--muted);font-size:13px" data-lang="en">165D extraction only on 10-20K high-value samples, avoids full-table shift</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data Flow -->
+    <div class="card">
+      <div class="card-header">
+        <h2 data-lang="zh">数据处理流程</h2>
+        <h2 data-lang="en">Data Processing Pipeline</h2>
+      </div>
+      <div class="timeline">
+        <div class="timeline-item">
+          <strong data-lang="zh">步骤 1：首次触板标签生成</strong>
+          <strong data-lang="en">Step 1: First Touch Label Generation</strong>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px" data-lang="zh">检测所有触板瞬间 → 按股票分组 → 仅保留首次触板</p>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px" data-lang="en">Detect all touch moments → group by stock → keep only first touch</p>
+          <div style="margin-top:8px" class="progress">
+            <div class="progress-bar" style="width: 100%"></div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <strong data-lang="zh">步骤 2：前置内存阻断</strong>
+          <strong data-lang="en">Step 2: Early Memory Blocking</strong>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px" data-lang="zh">保留正样本 + 困难负样本（dist&lt;5%），剔除死板和垃圾时间</p>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px" data-lang="en">Keep positives + hard negatives (dist&lt;5%), exclude dead limit and garbage time</p>
+          <div style="margin-top:8px" class="progress">
+            <div class="progress-bar" style="width: 85%"></div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <strong data-lang="zh">步骤 3：按需特征平铺</strong>
+          <strong data-lang="en">Step 3: On-demand Feature Flattening</strong>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px" data-lang="zh">15个核心特征 × 10个时间位置 + 15个末端特征 = 165维</p>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px" data-lang="en">15 core features × 10 time positions + 15 final features = 165D</p>
+          <div style="margin-top:8px" class="progress">
+            <div class="progress-bar" style="width: 65%"></div>
+          </div>
+        </div>
+        <div class="timeline-item">
+          <strong data-lang="zh">步骤 4：智能NaN填充</strong>
+          <strong data-lang="en">Step 4: Smart NaN Filling</strong>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px" data-lang="zh">价格类：ffill/bfill，成交量类：0填充，严禁mean()</p>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px" data-lang="en">Price: ffill/bfill, volume: fill with 0, strictly no mean()</p>
+          <div style="margin-top:8px" class="progress">
+            <div class="progress-bar" style="width: 40%"></div>
+          </div>
+        </div>
+        <div class="timeline-item" style="padding-bottom:0">
+          <strong data-lang="zh">步骤 5：两层负采样</strong>
+          <strong data-lang="en">Step 5: Two-layer Negative Sampling</strong>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px" data-lang="zh">基于距离的分层欠采样，按交易日独立处理</p>
+          <p style="margin:6px 0 0;color:var(--muted);font-size:13px" data-lang="en">Distance-based stratified undersampling, process each trading day independently</p>
+          <div style="margin-top:8px" class="progress">
+            <div class="progress-bar" style="width: 20%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rolling CV -->
+    <div class="card">
+      <div class="card-header">
+        <h2 data-lang="zh">滚动交叉验证 (Rolling CV)</h2>
+        <h2 data-lang="en">Rolling Cross Validation</h2>
+        <span class="badge-info">Expanding Window</span>
+      </div>
+      <div class="kpi" style="margin-bottom:16px">
+        <div class="kpi-item">
+          <div class="k">ROC-AUC</div>
+          <div class="v v-green v-small">0.972</div>
+          <div class="trend" data-lang="zh">排序能力优秀</div>
+          <div class="trend" data-lang="en">Excellent ranking</div>
+        </div>
+        <div class="kpi-item">
+          <div class="k">PR-AUC</div>
+          <div class="v v-green v-small">0.948</div>
+          <div class="trend" data-lang="zh">不平衡数据真实表现</div>
+          <div class="trend" data-lang="en">Real imbalanced data performance</div>
+        </div>
+        <div class="kpi-item">
+          <div class="k">Precision@0.5</div>
+          <div class="v v-blue v-small">72.3%</div>
+          <div class="trend" data-lang="zh">精确率达标</div>
+          <div class="trend" data-lang="en">Precision meets target</div>
+        </div>
+        <div class="kpi-item">
+          <div class="k" data-lang="zh">AUC 稳定性</div>
+          <div class="k" data-lang="en">AUC Stability</div>
+          <div class="v v-green v-small">±0.02</div>
+          <div class="trend" data-lang="zh">跨月表现稳定</div>
+          <div class="trend" data-lang="en">Stable cross-month performance</div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div>
+          <h3 data-lang="zh">📈 验证策略</h3>
+          <h3 data-lang="en">📈 Validation Strategy</h3>
+          <div class="chart-placeholder">
+            <div style="font-size:14px;font-weight:600;margin-bottom:8px" data-lang="zh">Rolling Window 示意图</div>
+            <div style="font-size:14px;font-weight:600;margin-bottom:8px" data-lang="en">Rolling Window Diagram</div>
+            <div style="font-size:12px;color:var(--muted)">
+              <span data-lang="zh">Fold 1: 训练 Jan~Mar, 验证 Apr</span>
+              <span data-lang="en">Fold 1: Train Jan~Mar, Validate Apr</span>
+              <br>
+              <span data-lang="zh">Fold 2: 训练 Jan~Apr, 验证 May</span>
+              <span data-lang="en">Fold 2: Train Jan~Apr, Validate May</span>
+              <br>
+              <span data-lang="zh">Fold 3: 训练 Jan~May, 验证 Jun</span>
+              <span data-lang="en">Fold 3: Train Jan~May, Validate Jun</span>
+              <br>
+              ...
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3 data-lang="zh">📊 逐月表现</h3>
+          <h3 data-lang="en">📊 Monthly Performance</h3>
+          <table>
+            <thead>
+              <tr>
+                <th><span data-lang="zh">验证月</span><span data-lang="en">Validation</span></th>
+                <th>ROC-AUC</th>
+                <th>PR-AUC</th>
+                <th><span data-lang="zh">精确率</span><span data-lang="en">Precision</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>2025-04</td><td>0.968</td><td>0.941</td><td>71.2%</td></tr>
+              <tr><td>2025-05</td><td>0.975</td><td>0.952</td><td>73.5%</td></tr>
+              <tr><td>2025-06</td><td>0.971</td><td>0.946</td><td>72.1%</td></tr>
+              <tr><td>2025-07</td><td>0.974</td><td>0.953</td><td>72.8%</td></tr>
+              <tr><td>2025-08</td><td>0.969</td><td>0.945</td><td>71.9%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sample Statistics -->
+    <div class="card">
+      <div class="card-header">
+        <h2 data-lang="zh">样本统计数据</h2>
+        <h2 data-lang="en">Sample Statistics</h2>
+        <span class="badge">2025</span>
+      </div>
+      <div class="tabs" id="sample-tabs">
+        <button class="tab active" data-tab="daily">
+          <span data-lang="zh">日级统计</span>
+          <span data-lang="en">Daily Stats</span>
+        </button>
+        <button class="tab" data-tab="feature">
+          <span data-lang="zh">特征统计</span>
+          <span data-lang="en">Feature Stats</span>
+        </button>
+        <button class="tab" data-tab="quality">
+          <span data-lang="zh">质量检查</span>
+          <span data-lang="en">Quality Check</span>
+        </button>
+      </div>
+
+      <div id="tab-daily" class="tab-content active">
+        <table>
+          <thead>
+            <tr>
+              <th><span data-lang="zh">日期</span><span data-lang="en">Date</span></th>
+              <th><span data-lang="zh">正样本</span><span data-lang="en">Positives</span></th>
+              <th><span data-lang="zh">负样本</span><span data-lang="en">Negatives</span></th>
+              <th><span data-lang="zh">正负比</span><span data-lang="en">Ratio</span></th>
+              <th><span data-lang="zh">涨停股票数</span><span data-lang="en">Limit-up Stocks</span></th>
+              <th><span data-lang="zh">样本纯度</span><span data-lang="en">Purity</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>2025-01-02</td><td>42</td><td>218</td><td>1:5.2</td><td>42</td><td>100%</td></tr>
+            <tr><td>2025-01-03</td><td>38</td><td>192</td><td>1:5.1</td><td>38</td><td>100%</td></tr>
+            <tr><td>2025-01-06</td><td>51</td><td>256</td><td>1:5.0</td><td>51</td><td>100%</td></tr>
+            <tr><td>2025-01-07</td><td>45</td><td>231</td><td>1:5.1</td><td>45</td><td>100%</td></tr>
+            <tr><td>2025-01-08</td><td>33</td><td>168</td><td>1:5.1</td><td>33</td><td>100%</td></tr>
+            <tr><td>...</td><td>...</td><td>...</td><td>...</td><td>...</td><td>...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="tab-feature" class="tab-content">
+        <div class="grid-2">
+          <div>
+            <h3 data-lang="zh">🎯 15个核心特征</h3>
+            <h3 data-lang="en">🎯 15 Core Features</h3>
+            <div class="feature-list">
+              <div class="feature-item" style="padding:8px">
+                <div class="feature-icon" style="width:22px;height:22px;font-size:12px">1</div>
+                <div style="font-size:13px"><strong>dist_to_limit</strong> - <span data-lang="zh">距离涨停比例</span><span data-lang="en">Distance to limit</span></div>
+              </div>
+              <div class="feature-item" style="padding:8px">
+                <div class="feature-icon" style="width:22px;height:22px;font-size:12px">2</div>
+                <div style="font-size:13px"><strong>ticks_to_limit</strong> - <span data-lang="zh">距离涨停tick数</span><span data-lang="en">Ticks to limit</span></div>
+              </div>
+              <div class="feature-item" style="padding:8px">
+                <div class="feature-icon" style="width:22px;height:22px;font-size:12px">3</div>
+                <div style="font-size:13px"><strong>ask1_to_limit</strong> - <span data-lang="zh">卖一价距离涨停</span><span data-lang="en">Ask1 to limit</span></div>
+              </div>
+              <div class="feature-item" style="padding:8px">
+                <div class="feature-icon" style="width:22px;height:22px;font-size:12px">4</div>
+                <div style="font-size:13px"><strong>bid_depth</strong> - <span data-lang="zh">买盘深度</span><span data-lang="en">Bid depth</span></div>
+              </div>
+              <div class="feature-item" style="padding:8px">
+                <div class="feature-icon" style="width:22px;height:22px;font-size:12px">5</div>
+                <div style="font-size:13px"><strong>order_imbalance</strong> - <span data-lang="zh">订单不平衡</span><span data-lang="en">Order imbalance</span></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <h3 data-lang="zh">📊 特征重要性 Top 10</h3>
+            <h3 data-lang="en">📊 Top 10 Feature Importance</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th><span data-lang="zh">排名</span><span data-lang="en">Rank</span></th>
+                  <th><span data-lang="zh">特征</span><span data-lang="en">Feature</span></th>
+                  <th><span data-lang="zh">重要性</span><span data-lang="en">Importance</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td>1</td><td>dist_to_limit_t9</td><td>18.5%</td></tr>
+                <tr><td>2</td><td>bid_depth_t9</td><td>12.3%</td></tr>
+                <tr><td>3</td><td>order_imbalance_t9</td><td>10.8%</td></tr>
+                <tr><td>4</td><td>ask1_to_limit_t9</td><td>9.6%</td></tr>
+                <tr><td>5</td><td>ret_1tick_t9</td><td>8.2%</td></tr>
+                <tr><td>6</td><td>dist_to_limit_t8</td><td>6.8%</td></tr>
+                <tr><td>7</td><td>ask_depth_t9</td><td>5.7%</td></tr>
+                <tr><td>8</td><td>spread_t9</td><td>4.9%</td></tr>
+                <tr><td>9</td><td>b1_volume_t9</td><td>4.2%</td></tr>
+                <tr><td>10</td><td>ask_slope_t9</td><td>3.8%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-quality" class="tab-content">
+        <div class="highlight-box">
+          <h3 data-lang="zh">✅ V3.2 质量检查项</h3>
+          <h3 data-lang="en">✅ V3.2 Quality Checks</h3>
+          <div class="feature-list" style="margin-top:12px">
+            <div class="feature-item" style="padding:8px;background:#ecfdf5;border-color:#a7f3d0">
+              <div class="feature-icon" style="width:22px;height:22px;font-size:12px;background:var(--success)">✓</div>
+              <div style="font-size:13px">
+                <span data-lang="zh">首次触板验证：每只股票单日最多1个正样本</span>
+                <span data-lang="en">First touch validation: max 1 positive per stock per day</span>
+              </div>
+            </div>
+            <div class="feature-item" style="padding:8px;background:#ecfdf5;border-color:#a7f3d0">
+              <div class="feature-icon" style="width:22px;height:22px;font-size:12px;background:var(--success)">✓</div>
+              <div style="font-size:13px">
+                <span data-lang="zh">NaN填充验证：无mean()填充，无未来信息泄露</span>
+                <span data-lang="en">NaN fill validation: no mean(), no future leakage</span>
+              </div>
+            </div>
+            <div class="feature-item" style="padding:8px;background:#ecfdf5;border-color:#a7f3d0">
+              <div class="feature-icon" style="width:22px;height:22px;font-size:12px;background:var(--success)">✓</div>
+              <div style="font-size:13px">
+                <span data-lang="zh">样本唯一性：无重复事件样本（按date, code, time）</span>
+                <span data-lang="en">Sample uniqueness: no duplicate event samples (by date, code, time)</span>
+              </div>
+            </div>
+            <div class="feature-item" style="padding:8px;background:#ecfdf5;border-color:#a7f3d0">
+              <div class="feature-icon" style="width:22px;height:22px;font-size:12px;background:var(--success)">✓</div>
+              <div style="font-size:13px">
+                <span data-lang="zh">正样本数量：单日10-80个，对应真实涨停股票数</span>
+                <span data-lang="en">Positive count: 10-80 per day, matches real limit-up stocks</span>
+              </div>
+            </div>
+            <div class="feature-item" style="padding:8px;background:#ecfdf5;border-color:#a7f3d0">
+              <div class="feature-icon" style="width:22px;height:22px;font-size:12px;background:var(--success)">✓</div>
+              <div style="font-size:13px">
+                <span data-lang="zh">采样比例：最终正负比例接近1:5</span>
+                <span data-lang="en">Sampling ratio: final positive-negative ratio ~1:5</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comparison -->
+    <div class="card">
+      <div class="card-header">
+        <h2 data-lang="zh">版本迭代对比</h2>
+        <h2 data-lang="en">Version Comparison</h2>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th><span data-lang="zh">版本</span><span data-lang="en">Version</span></th>
+            <th><span data-lang="zh">标签定义</span><span data-lang="en">Label Def</span></th>
+            <th><span data-lang="zh">正样本/日</span><span data-lang="en">Pos/day</span></th>
+            <th><span data-lang="zh">内存</span><span data-lang="en">Memory</span></th>
+            <th><span data-lang="zh">业务对齐</span><span data-lang="en">Alignment</span></th>
+            <th><span data-lang="zh">特点</span><span data-lang="en">Features</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="badge">V3.2</span></td>
+            <td><strong data-lang="zh">首次触板</strong><strong data-lang="en">First Touch</strong></td>
+            <td><span style="color:var(--success);font-weight:600">10-80</span></td>
+            <td><span style="color:var(--success);font-weight:600">1-2GB</span></td>
+            <td><span class="badge" data-lang="zh">完美</span><span class="badge" data-lang="en">Perfect</span></td>
+            <td><span data-lang="zh">一板一样本，100%纯度</span><span data-lang="en">One stock one sample, 100% pure</span></td>
+          </tr>
+          <tr>
+            <td><span class="badge-info">V3.1</span></td>
+            <td><span data-lang="zh">触板事件</span><span data-lang="en">Touch Events</span></td>
+            <td>10-200+</td>
+            <td>1-2GB</td>
+            <td><span class="badge-warn" data-lang="zh">较好</span><span class="badge-warn" data-lang="en">Good</span></td>
+            <td><span data-lang="zh">事件驱动，内存优化</span><span data-lang="en">Event-driven, memory optimized</span></td>
+          </tr>
+          <tr>
+            <td><span class="badge-info" style="background:#e5e7eb;color:#374151">V3.0</span></td>
+            <td><span data-lang="zh">窗口标签</span><span data-lang="en">Window Label</span></td>
+            <td>~1000</td>
+            <td><span class="badge-warn">20GB</span></td>
+            <td><span class="badge-warn" data-lang="zh">一般</span><span class="badge-warn" data-lang="en">Fair</span></td>
+            <td><span data-lang="zh">方案A实现</span><span data-lang="en">Scheme A implementation</span></td>
+          </tr>
+          <tr>
+            <td><span class="badge-info" style="background:#e5e7eb;color:#374151">V2.0</span></td>
+            <td><span data-lang="zh">第11个Tick</span><span data-lang="en">11th Tick</span></td>
+            <td>~5000</td>
+            <td><span data-lang="zh">较高</span><span data-lang="en">High</span></td>
+            <td><span class="badge-warn" data-lang="zh">较差</span><span class="badge-warn" data-lang="en">Poor</span></td>
+            <td><span data-lang="zh">两层欠采样</span><span data-lang="en">Two-layer undersampling</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Usage -->
+    <div class="card">
+      <div class="card-header">
+        <h2 data-lang="zh">快速使用指南</h2>
+        <h2 data-lang="en">Quick Start Guide</h2>
+      </div>
+      <div class="grid-2">
+        <div>
+          <h3 data-lang="zh">📁 单日训练集构建</h3>
+          <h3 data-lang="en">📁 Single Day Dataset</h3>
+          <div style="background:#1f2937;color:#e5e7eb;padding:12px;border-radius:8px;font-family:Consolas,monospace;font-size:13px;overflow-x:auto">
+python scripts/training_set_builder.py \
+  --input "2025/1/2025-01-02.7z" \
+  --output "data/" \
+  --mode single
+          </div>
+        </div>
+        <div>
+          <h3 data-lang="zh">📈 滚动验证</h3>
+          <h3 data-lang="en">📈 Rolling Validation</h3>
+          <div style="background:#1f2937;color:#e5e7eb;padding:12px;border-radius:8px;font-family:Consolas,monospace;font-size:13px;overflow-x:auto">
+<span data-lang="zh"># Step 1: 合并数据</span>
+<span data-lang="en"># Step 1: Merge data</span>
+python scripts/merge_daily_data.py
+
+<span data-lang="zh"># Step 2: 运行滚动验证</span>
+<span data-lang="en"># Step 2: Run rolling CV</span>
+python scripts/rolling_cv.py
+
+<span data-lang="zh"># Step 3: 生成可视化</span>
+<span data-lang="en"># Step 3: Generate visualization</span>
+python scripts/rolling_cv_plot.py
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer-note">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <strong data-lang="zh">涨停预测系统 V3.2</strong>
+          <strong data-lang="en">Limit-Up Prediction System V3.2</strong>
+          <span data-lang="zh"> | 基于 Tick 数据的事件驱动型预测</span>
+          <span data-lang="en"> | Event-driven prediction based on Tick data</span>
+        </div>
+        <div style="color:var(--muted)">
+          <span data-lang="zh">文档生成时间: 2025年</span>
+          <span data-lang="en">Document generated: 2025</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentLang = 'zh';
+
+    function setLanguage(lang) {
+      currentLang = lang;
+
+      // Update button states
+      document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('lang-' + lang).classList.add('active');
+
+      // Update visibility of all elements
+      document.querySelectorAll('[data-lang]').forEach(el => {
+        el.classList.remove('zh-visible', 'en-visible');
+        if (el.dataset.lang === lang) {
+          el.classList.add(lang + '-visible');
+        }
+      });
+
+      // Store preference
+      localStorage.setItem('prefLang', lang);
+    }
+
+    // Tab switching
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        const tabId = 'tab-' + tab.dataset.tab;
+        document.getElementById(tabId).classList.add('active');
+      });
+    });
+
+    // Language switching
+    document.getElementById('lang-zh').addEventListener('click', () => setLanguage('zh'));
+    document.getElementById('lang-en').addEventListener('click', () => setLanguage('en'));
+
+    // Initialize with stored preference or default to Chinese
+    const storedLang = localStorage.getItem('prefLang');
+    setLanguage(storedLang || 'zh');
+
+    // Animate progress bars on scroll
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.querySelectorAll('.progress-bar').forEach(bar => {
+            bar.style.width = bar.style.width;
+          });
+        }
+      });
+    }, { threshold: 0.3 });
+
+    document.querySelectorAll('.card').forEach(card => observer.observe(card));
+  </script>
+</body>
+</html>

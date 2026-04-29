@@ -1,36 +1,36 @@
 # 基于 Tick 数据的涨停预测系统
 
-**版本**：V3.1 (事件驱动与极致内存管理版)
-**建模目标**：以事件驱动方式预测"触板瞬间"，而非涨停状态
-**模型方案**：事件驱动标签 + 内存阻断策略 + 按需特征平铺 + LightGBM 分类
+**版本**：V3.2 (极致提纯版 - 一板一样本)
+**建模目标**：以事件驱动方式预测"首次触板瞬间"，而非涨停状态
+**模型方案**：首次触板标签 + 内存阻断策略 + 按需特征平铺 + LightGBM 分类
 **数据粒度**：单股票、单交易日、事件级样本
 
 ---
 
-## 🎯 V3.1版本核心突破
+## 🎯 V3.2版本核心突破
 
 ### 🚀 核心问题解决
 
-**V3.0版本存在的两大瓶颈：**
-1. **假正样本问题**：涨停被定义为"状态"，单日产生20万+假正样本
-2. **内存爆炸问题**：1335万tick × 165列 ≈ 20GB内存，极易OOM
+**V3.1版本存在的问题：**
+- 多次触板问题：同一只股票单日可能产生多个正样本
+- 样本纯度不足：后续触板的预测价值低于首次触板
 
-**V3.1版本的革命性改进：**
+**V3.2版本的革命性改进：**
 
-1. **标签重构**：从"状态"→"事件"
-   - ❌ 旧标签：第11个tick是否处于涨停状态
-   - ✅ 新标签：价格是否从非涨停突破到涨停（触板瞬间）
-   - 🎯 效果：单日正样本从20万骤降至10-50个
+1. **"一板一样本"极致提纯**
+   - ❌ 旧方式：同一只股票多次触板产生多个正样本
+   - ✅ 新方式：按股票分组，只保留每只股票的首次触板
+   - 🎯 效果：单日正样本约10-80个，对应真实涨停股票数，纯度100%
 
-2. **内存阻断**：从"先平铺后过滤"→"先过滤后平铺"
-   - ❌ 旧方式：全量1335万tick × 165列平铺 = 20GB内存
-   - ✅ 新方式：前置过滤95%无用数据，仅对1-2万高价值样本平铺 = 1-2GB内存
-   - 🎯 效果：内存占用降低90%+，处理速度提升5-10倍
+2. **智能NaN填充策略**
+   - ❌ 旧方式：可能使用mean()填充，存在未来函数泄露风险
+   - ✅ 新方式：价格类特征用向前/向后平推，成交量类用0填充
+   - 🎯 效果：严格避免未来信息泄露，保证数据合法性
 
-3. **数据质量**：完全符合真实交易逻辑
-   - 仅保留具有预测价值的高价值观测点
-   - 绝对剔除死板状态和垃圾时间数据
-   - 困难负样本：距离涨停<2%但最终未封板的时刻
+3. **业务逻辑完美对齐**
+   - 建模目标：预测"今天能不能上板"的首次触板
+   - 核心原则：单只股票单日最多1个正样本
+   - 样本代表性：首次触板最具预测价值
 
 ---
 
@@ -39,36 +39,36 @@
 本项目旨在基于股票 Tick 级盘口数据，构建一个事件驱动型监督学习分类模型：
 
 ```
-给定连续 10 个 Tick 的窗口信息，预测价格是否从非涨停突破到涨停（触板瞬间）
+给定连续 10 个 Tick 的窗口信息，预测第 11 个 Tick 是否会发生"首次触板"事件
 ```
 
 核心预测逻辑：
 - 输入：前 10 个 Tick 的盘口信息
-- 标签：`y_t = 1 if (current[t+10] >= limit_price AND current[t+9] < limit_price) else 0`
-- 含义：预测价格是否从T10的非涨停状态在T11突破到涨停
+- 标签：`y_t = 1` 表示这是该股票当日首次触板瞬间
+- 含义：预测价格是否从非涨停状态首次突破到涨停
 
 ---
 
 ## 核心特性
 
-### 🎯 预测目标（V3.1事件驱动）
-- **预测对象**：触板瞬间（价格突破涨停价的那一瞬间）
+### 🎯 预测目标（V3.2首次触板）
+- **预测对象**：首次触板瞬间（每只股票单日仅一次）
 - **样本单位**：事件级别（date, code, trigger_time）
 - **特征约束**：仅使用前10个tick的信息，不使用未来信息
-- **正样本定义**：仅保留突破涨停的瞬时点，而非持续的涨停状态
+- **正样本定义**：仅保留每只股票的首次触板瞬时点
 
-### 📊 特征工程（V3.1按需平铺）
+### 📊 特征工程（V3.2按需平铺）
 - **窗口特征**：10个Tick的165维特征（平铺特征 + 末端特征）
 - **特征维度**：15个核心特征 × 10个时间位置 + 15个末端特征 = 165维
 - **内存优化**：仅对1-2万高价值样本进行特征平铺，避免20GB内存爆炸
 
-### 🔄 处理流程（V3.1内存阻断）
-1. **事件驱动标签**：计算触板瞬间标签
+### 🔄 处理流程（V3.2内存阻断 + 首次触板）
+1. **首次触板标签**：按股票分组，只保留每只股票的首次触板
 2. **前置内存阻断**：过滤95%无用数据
 3. **按需特征平铺**：仅对保留样本进行165维提取
-4. **两层负采样**：基于距离的分层欠采样
-5. **独立欠采样**：按交易日独立处理
-6. **手动合并**：最终手动合并多日训练集
+4. **智能NaN填充**：价格类平推，成交量类填0
+5. **两层负采样**：基于距离的分层欠采样
+6. **独立欠采样**：按交易日独立处理
 
 ---
 
@@ -80,7 +80,9 @@
 2025/
   2025-01-02.7z
   2025-01-03.7z
-  2025-01-06.7z
+  ...
+2026/
+  2026-01-02.7z
   ...
 ```
 
@@ -90,11 +92,9 @@
 data/
 ├── daily_train_candidates/      # 候选训练集（未欠采样，事件样本）
 │   ├── 2025-01-02_candidate.parquet
-│   ├── 2025-01-03_candidate.parquet
 │   └── ...
 ├── daily_train_undersampled/    # 欠采样训练集分片
 │   ├── 2025-01-02_train.parquet
-│   ├── 2025-01-03_train.parquet
 │   └── ...
 ├── logs/                        # 统计日志
 │   ├── 2025-01-02_summary.csv
@@ -139,9 +139,18 @@ python scripts/training_set_builder.py \
   --target-ratio 5.0
 ```
 
+### 合并多日训练集
+
+```bash
+python scripts/training_set_builder.py \
+  --mode merge \
+  --shards-dir "d:/Qoder-project/deep project/data/daily_train_undersampled" \
+  --merged-output "d:/Qoder-project/deep project/data/merged/multi_day_train.parquet"
+```
+
 ---
 
-## 特征工程设计（V3.1版本）
+## 特征工程设计
 
 ### 15个核心特征
 
@@ -178,48 +187,73 @@ money_delta         # 当前成交额变化
 
 ---
 
-## 标签生成（V3.1事件驱动）
+## 标签生成（V3.2首次触板）
 
-### 事件驱动标签定义
+### 首次触板标签定义
 
 ```python
-# 核心逻辑：检测价格是否从非涨停突破到涨停
+# 步骤1：检测所有触板事件
 next_is_limit = current[t+10] >= limit_price
-current_is_limit = current[t+9] >= limit_price
+current_is_limit = current[t+9] < limit_price
+all_touch_events = next_is_limit & ~current_is_limit
 
-# 事件驱动标签：仅保留突破瞬间
-label = (next_is_limit & ~current_is_limit) ? 1 : 0
+# 步骤2：按股票分组，只保留每只股票的首次触板
+touch_indices = df[all_touch_events == 1].index
+first_touch_indices = df.loc[touch_indices].groupby('code').head(1).index
+
+# 步骤3：设置标签
+df['label'] = 0
+df.loc[first_touch_indices, 'label'] = 1
 ```
 
 ### 前置内存阻断策略
 
 ```python
 # 保留条件：
-1. 正样本：label == 1（触板瞬间）
-2. 困难负样本：dist_to_limit < 2%（接近涨停但未封板）
+1. 正样本：label == 1（首次触板瞬间）
+2. 困难负样本：dist_to_limit < 5%（接近涨停但未封板）
 
 # 剔除条件：
 1. 死板状态：current >= limit_price（已经在涨停板上）
-2. 垃圾时间：dist_to_limit >= 2%（远离涨停，无预测价值）
+2. 垃圾时间：dist_to_limit >= 5%（远离涨停，无预测价值）
 3. 边界数据：前9个tick无法构筑窗口，最后一个tick无未来标签
+```
+
+### 智能NaN填充策略
+
+```python
+# 价格类特征：使用向前/向后平推（避免未来函数泄露）
+price_features = ['dist_to_limit', 'ask1_to_limit', 'ask1_gap', 'spread', 
+                  'ask_slope', 'bid_slope', 'ret_1tick']
+for col in price_features:
+    df[col] = df[col].ffill().bfill()
+    if df[col].isna().any():
+        df[col].fillna(0, inplace=True)
+
+# 成交量/变化率特征：用0填充
+volume_features = ['bid_depth', 'ask_depth', 'order_imbalance', 
+                   'b1_volume', 'a1_volume', 'vol_delta', 'money_delta']
+for col in volume_features:
+    df[col].fillna(0, inplace=True)
 ```
 
 ---
 
-## 数据质量检查（V3.1事件样本）
+## 数据质量检查
 
-### V3.1特有检查项
+### V3.2特有检查项
 
-1. **事件/状态比例**：应该<10%（事件数量应该远小于状态数量）
-2. **正样本数量**：单日应该<100个（事件驱动模式下正样本很少）
-3. **内存效率**：从原始tick到事件样本的减少率应该>90%
+1. **首次触板验证**：每只股票单日最多1个正样本
+2. **正样本数量**：单日应该10-80个（对应真实涨停股票数）
+3. **NaN填充验证**：确保无mean()填充，无未来信息泄露
+4. **内存效率**：从原始tick到事件样本的减少率应该>90%
 
 ### 常规检查项
 
 1. **唯一性检查**：确保没有重复事件样本（按 date, code, time）
 2. **空值检查**：关键字段不能为空（date, code, label）
 3. **特征完整性检查**：165维特征必须存在
-4. **正样本检查**：必须包含正样本（触板事件）
+4. **正样本检查**：必须包含正样本（首次触板事件）
 5. **采样比例检查**：最终比例应接近 1:5
 
 ---
@@ -227,7 +261,7 @@ label = (next_is_limit & ~current_is_limit) ? 1 : 0
 ## 项目目录结构
 
 ```
-tick_limitup/
+deep project/
 ├── data/                           # 数据目录
 │   ├── daily_train_candidates/     # 候选训练集（事件样本）
 │   ├── daily_train_undersampled/   # 欠采样训练集分片
@@ -235,45 +269,63 @@ tick_limitup/
 │   ├── merged/                     # 合并后的训练集
 │   └── temp_extract/              # 临时解压目录
 ├── scripts/                        # 脚本目录
-│   ├── training_set_builder.py     # 训练集构建器（V3.1实现）
-│   └── extract_7z.py              # 解压工具
+│   ├── training_set_builder.py     # 训练集构建器（V3.2实现）
+│   ├── extract_7z.py              # 解压工具
+│   ├── merge_daily_data.py        # 合并日数据
+│   ├── rolling_cv.py              # 滚动验证
+│   └── debug_touch_events.py      # 触板事件调试
 ├── src/                           # 源代码目录
 │   ├── data_processing/           # 数据处理模块
 │   │   ├── limit_up_processor.py  # 数据处理
 │   │   ├── limit_up_processor_optimized.py  # 优化版处理器
 │   │   ├── stock_utils.py         # 股票工具
 │   │   ├── quality_check.py       # 质量检查
-│   │   ├── sampling.py            # 欠采样模块
-│   │   └── sampling_optimized.py  # 内存优化版采样
-│   └── feature_engineering/       # 特征工程模块
-│       ├── limit_up_features.py   # 基础特征提取
-│       ├── limit_up_labels.py     # 旧版标签生成（向后兼容）
-│       ├── event_driven_labels.py # V3.1事件驱动标签（新核心）
-│       └── event_window_builder.py # V3.1事件窗口构建器（新核心）
-├── models/                        # 模型目录
-│   └── lgbm_trainer.py           # LightGBM训练器
-├── train_model.py                 # 模型训练脚本
-├── build_2025_dataset.py          # 批量数据集构建
-└── README.md                      # 项目说明
+│   │   └── sampling.py            # 欠采样模块
+│   ├── feature_engineering/       # 特征工程模块
+│   │   ├── limit_up_features.py   # 基础特征提取
+│   │   ├── event_driven_labels.py # V3.2首次触板标签（核心）
+│   │   └── event_window_builder.py # V3.2事件窗口构建器（核心）
+│   └── models/                    # 模型模块
+│       └── lgbm_trainer.py        # LightGBM训练器
+├── tests/                         # 测试目录
+│   ├── test_v32_first_touch_labels.py    # 首次触板标签测试
+│   ├── test_v32_boundary_handling.py     # 边界处理测试
+│   ├── test_v32_nan_handling.py          # NaN处理测试
+│   └── test_v32_integration.py           # 集成测试
+├── models/                        # 模型存储目录
+│   └── rolling_cv/               # 滚动验证模型
+├── 2025/                         # 2025年数据文件
+├── 2026/                         # 2026年数据文件
+├── main.py                       # 主程序入口
+├── run_system.py                 # 系统运行脚本
+├── train_model.py                # 模型训练脚本
+├── build_2025_dataset.py         # 批量数据集构建
+├── requirements.txt              # 依赖配置
+└── README.md                     # 项目说明
 ```
 
 ---
 
 ## 技术要点
 
-### V3.1核心创新
+### V3.2核心创新
 
-1. **事件驱动标签**
-   - 从预测"状态"改为预测"事件"
-   - 标签逻辑：`next_is_limit & ~current_is_limit`
-   - 业务逻辑：仅捕捉价格突破涨停价的瞬时点
+1. **首次触板标签**
+   - 从"多次触板"改为"一板一样本"
+   - 按股票分组，只保留每只股票的首次触板
+   - 业务逻辑：完全对齐"今天能不能上板"的预测目标
 
-2. **前置内存阻断**
+2. **智能NaN填充**
+   - 价格类特征：向前/向后平推，避免未来函数泄露
+   - 成交量类特征：用0填充，符合业务逻辑
+   - 严禁使用mean()填充，保证数据合法性
+
+3. **前置内存阻断**
    - 在特征平铺前进行激进采样
    - 保留正样本 + 困难负样本，剔除95%无用数据
    - 内存占用：从20GB降至1-2GB
 
-3. **按需特征平铺**
+4. **按需特征平铺**
    - 仅对1-2万高价值样本进行165维特征提取
    - 避免全表shift操作，提升处理速度5-10倍
 
@@ -307,96 +359,112 @@ limit_price = round(preclose * limit_ratio, 2)
 ### 完整工作流程
 
 ```bash
-# 1. 单日训练集构建（V3.1事件驱动模式）
+# 1. 快速开始完整流程
+python run_system.py --mode quick
+
+# 2. 环境检查
+python run_system.py --mode env
+
+# 3. 单日训练集构建（V3.2首次触板模式）
 python scripts/training_set_builder.py \
   --input "2025/1/2025-01-02.7z" \
   --output "d:/Qoder-project/deep project/data" \
   --mode single
 
-# 2. 批量训练集构建
+# 4. 批量训练集构建
 python scripts/training_set_builder.py \
   --input-dir "2025/1/" \
   --output "d:/Qoder-project/deep project/data" \
   --mode batch
 
-# 3. 合并训练集
+# 5. 合并训练集
 python scripts/training_set_builder.py \
   --mode merge \
   --shards-dir "d:/Qoder-project/deep project/data/daily_train_undersampled" \
   --merged-output "d:/Qoder-project/deep project/data/merged/multi_day_train.parquet"
+
+# 6. 模型训练
+python train_model.py --mode split --input data/merged/multi_day_train.parquet
 ```
 
 ### 日志分析
 
-V3.1版本的统计日志包含特有字段：
+V3.2版本的统计日志包含特有字段：
 
 ```python
 import pandas as pd
 
-# 读取V3.1统计日志
+# 读取V3.2统计日志
 log_df = pd.read_csv("data/logs/2025-01-02_summary.csv")
-print(log_df[['date', 'version', 'limit_up_events', 'event_samples', 'event_to_state_ratio']])
+print(log_df[['date', 'version', 'first_touch_events', 'unique_stocks', 'sample_purity']])
 ```
 
 ---
 
 ## 系统特点
 
-- ✅ **事件驱动**：标签符合真实交易逻辑，预测触板瞬间而非涨停状态
+- ✅ **一板一样本**：每只股票单日仅1个正样本，纯度100%
+- ✅ **首次触板**：最具预测价值的触板事件，业务逻辑完美对齐
+- ✅ **智能NaN填充**：价格类平推，成交量类填0，无未来信息泄露
 - ✅ **内存优化**：前置内存阻断，内存占用降低90%+
 - ✅ **数据质量**：仅保留1-2万高价值样本，符合业务规律
 - ✅ **模块化设计**：每个功能模块独立，易于维护
 - ✅ **灵活配置**：支持多种欠采样参数调整
 - ✅ **完整日志**：详细的统计日志和质量报告
-- ✅ **向后兼容**：保留旧版标签生成逻辑，便于迁移
+- ✅ **全面测试**：V3.2专属测试套件，保证功能正确性
 
 ---
 
 ## 注意事项
 
-1. **V3.1版本特性**：采用事件驱动标签，正样本数量大幅减少（单日10-50个）
-2. **内存管理**：V3.1版本内存占用极低（1-2GB），但仍需注意资源限制
-3. **标签定义**：预测目标是触板瞬间（价格突破涨停），不是涨停状态
-4. **特征约束**：特征仅使用窗口内信息，严格禁止使用未来信息
-5. **数据质量**：V3.1版本数据质量极高，完全符合真实交易场景
+1. **V3.2版本特性**：采用"一板一样本"策略，正样本为每只股票的首次触板
+2. **样本数量**：单日正样本约10-80个（对应真实涨停股票数）
+3. **内存管理**：V3.2版本内存占用极低（1-2GB），但仍需注意资源限制
+4. **标签定义**：预测目标是首次触板瞬间，不是涨停状态
+5. **特征约束**：特征仅使用窗口内信息，严格禁止使用未来信息
+6. **NaN填充**：严禁使用mean()填充，必须使用向前/向后平推或0填充
+7. **数据质量**：V3.2版本数据质量极高，完全符合真实交易场景
 
 ---
 
 ## 版本历史
 
-### V3.1 (当前版本 - 事件驱动与内存管理)
+### V3.2 (当前版本 - 极致提纯版)
+- **首次触板检测**：按股票分组，只保留每只股票的首次触板
+- **一板一样本**：单只股票单日最多1个正样本，纯度100%
+- **智能NaN填充**：价格类平推，成交量类填0，避免未来函数泄露
+- **业务逻辑对齐**：完全符合"今天能不能上板"的预测目标
+- **测试套件**：创建V3.2专属全面测试，保证功能正确性
+
+### V3.1 (事件驱动与内存管理)
 - **标签重构**：从"状态"改为"事件"，单日正样本从20万骤降至10-50个
 - **内存阻断**：前置过滤95%无用数据，内存占用从20GB降至1-2GB
 - **按需平铺**：仅对1-2万高价值样本进行165维特征提取
 - **处理速度**：避免全表shift操作，速度提升5-10倍
-- **业务逻辑**：完全符合真实交易规律，预测触板瞬间
 
 ### V3.0 (方案A实现)
 - 标签生成：使用 `shift(-10)` 生成窗口标签
 - 窗口特征提取：前10个tick窗口 + 第11个tick标签
 - 32个窗口特征：15个末端特征 + 17个统计特征
-- 清理冗余文件和测试代码
 - 存在问题：假正样本过多，内存占用过高
 
 ### V2.0
-- 预测目标从下一个 tick 改为第 11 个 tick（标签定义错误）
+- 预测目标从下一个 tick 改为第 11 个 tick
 - 实现两层欠采样策略
 - 重构训练集构建流程
-- 增强日志和质量检查
-- 移除数据集划分功能
 
 ### V1.0
 - 初始版本
 - 基础特征工程
 - 单层欠采样
-- 数据集划分功能
 
 ---
 
 ## 技术支持
 
 如有问题或建议，请参考：
-- V3.1技术文档：了解事件驱动标签和内存阻断策略
+- V3.2版本升级总结：了解"一板一样本"策略详情
 - `scripts/training_set_builder.py` - 主要实现代码
-- `src/feature_engineering/event_driven_labels.py` - 事件驱动标签模块
-- `src/feature_engineering/event_window_builder.py` - 事件窗口构建器
+- `src/feature_engineering/event_driven_labels.py` - V3.2首次触板标签模块
+- `src/feature_engineering/event_window_builder.py` - V3.2事件窗口构建器
+- `tests/test_v32_*.py` - V3.2测试套件

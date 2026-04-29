@@ -28,12 +28,16 @@ from src.feature_engineering.event_driven_labels import (
 class EventWindowBuilder:
     """事件窗口构建器 - V3.2版本（一板一样本）"""
 
-    # 15个核心特征列
+    # 5个核心截面特征 + 5个趋势特征
     BASE_FEATURES = [
-        'dist_to_limit', 'ticks_to_limit', 'ask1_to_limit', 'ask1_gap',
-        'bid_depth', 'ask_depth', 'order_imbalance', 'b1_volume', 'a1_volume',
-        'spread', 'ask_slope', 'bid_slope',
-        'ret_1tick', 'vol_delta', 'money_delta'
+        'dist_to_limit', 'order_imbalance', 'b1_volume', 'a1_volume', 'money_delta'
+    ]
+    TREND_FEATURES = [
+        'dist_to_limit_slope',   # 冲板速度：T1~T9的dist_to_limit变化斜率
+        'a1_volume_trend',      # 卖一消耗速度：T1~T9的a1_volume变化
+        'b1_volume_trend',      # 买一堆积趋势：T1~T9的b1_volume变化
+        'order_imbalance_pct',   # 订单失衡持续性：T1~T9中OI>0的占比
+        'money_delta_accel'      # 成交额加速度：T1~T9的money_delta二阶差分
     ]
 
     def __init__(self, window_size: int = 10, limit_dist_threshold: float = 0.05):
@@ -218,6 +222,10 @@ class EventWindowBuilder:
         features_dict['time'] = core_df['time'].values
         features_dict['label'] = core_df['label'].values.astype(np.int8)
 
+        # 计算趋势特征（向量化版本）
+        trend_features = self._compute_trend_features_vectorized(loc_indices, n_samples, df)
+        features_dict.update(trend_features)
+
         # 一次性创建DataFrame（避免碎片化）
         result_df = pd.DataFrame(features_dict)
 
@@ -275,6 +283,82 @@ class EventWindowBuilder:
                     df[col].fillna(0, inplace=True)
 
         return df
+
+    def _compute_trend_features_vectorized(
+        self,
+        loc_indices: np.ndarray,
+        n_samples: int,
+        df: pd.DataFrame
+    ) -> Dict:
+        """
+        向量化计算趋势特征（从T1~T9提取）
+
+        计算5个趋势特征：
+        1. dist_to_limit_slope: T1~T9的线性回归斜率（价格加速）
+        2. a1_volume_trend: T1~T9的变化量（卖一消耗）
+        3. b1_volume_trend: T1~T9的变化量（买一堆积）
+        4. order_imbalance_pct: T1~T9中OI>0的占比
+        5. money_delta_accel: T1~T9的二阶差分均值（加速度）
+        """
+        features = {}
+
+        # 提取T1~T9的数据（window_size=10时，历史tick是lag 1~9）
+        t_positions = np.arange(1, self.window_size)  # [1, 2, ..., 9]
+        n_ticks = len(t_positions)
+
+        # 预分配存储
+        dist_vals = np.zeros((n_samples, n_ticks), dtype=np.float32)
+        a1_vals = np.zeros((n_samples, n_ticks), dtype=np.float32)
+        b1_vals = np.zeros((n_samples, n_ticks), dtype=np.float32)
+        oi_vals = np.zeros((n_samples, n_ticks), dtype=np.float32)
+        money_vals = np.zeros((n_samples, n_ticks), dtype=np.float32)
+
+        # 批量提取T1~T9数据
+        for j, lag in enumerate(t_positions):
+            lag_locs = loc_indices - lag
+            valid_mask = (lag_locs >= 0) & (lag_locs < len(df))
+
+            for col_name, storage in [('dist_to_limit', dist_vals),
+                                        ('a1_volume', a1_vals),
+                                        ('b1_volume', b1_vals),
+                                        ('order_imbalance', oi_vals),
+                                        ('money_delta', money_vals)]:
+                if col_name in df.columns:
+                    valid_idx = lag_locs[valid_mask]
+                    if len(valid_idx) > 0:
+                        storage[valid_mask, j] = df.iloc[valid_idx][col_name].values
+
+        # 填充NaN为0
+        dist_vals = np.nan_to_num(dist_vals, nan=0.0)
+        a1_vals = np.nan_to_num(a1_vals, nan=0.0)
+        b1_vals = np.nan_to_num(b1_vals, nan=0.0)
+        oi_vals = np.nan_to_num(oi_vals, nan=0.0)
+        money_vals = np.nan_to_num(money_vals, nan=0.0)
+
+        # 1. dist_to_limit_slope: 线性回归斜率（简化版：用首尾差/9）
+        # 斜率为负表示价格在加速向涨停靠拢（好信号）
+        x = np.arange(n_ticks, dtype=np.float32)
+        x_mean = x.mean()
+        dist_slope = (dist_vals.dot(x) - dist_vals.sum() * x_mean) / (x.dot(x) - n_ticks * x_mean**2 + 1e-10)
+        features['dist_to_limit_slope'] = dist_slope.astype(np.float32)
+
+        # 2. a1_volume_trend: 卖一消耗速度（最后-最早）
+        # 正值表示卖一被持续吃掉
+        features['a1_volume_trend'] = (a1_vals[:, -1] - a1_vals[:, 0]).astype(np.float32)
+
+        # 3. b1_volume_trend: 买一堆积趋势（最后-最早）
+        features['b1_volume_trend'] = (b1_vals[:, -1] - b1_vals[:, 0]).astype(np.float32)
+
+        # 4. order_imbalance_pct: OI>0的占比
+        features['order_imbalance_pct'] = (oi_vals > 0).mean(axis=1).astype(np.float32)
+
+        # 5. money_delta_accel: 二阶差分均值
+        # 加速度为正表示资金涌入在加速
+        money_diff1 = np.diff(money_vals, axis=1)  # 一阶差分
+        money_accel = np.diff(money_diff1, axis=1)   # 二阶差分
+        features['money_delta_accel'] = np.nan_to_num(money_accel.mean(axis=1), nan=0.0).astype(np.float32)
+
+        return features
 
     def _process_single_stock(self, code: str, stock_df: pd.DataFrame) -> Dict:
         """
@@ -543,11 +627,14 @@ class EventWindowBuilder:
         for base_feature in self.BASE_FEATURES:
             features.append(f'{base_feature}_last')
 
-        # 窗口平铺特征
+        # 窗口平铺特征 (T1~T9)
         for t in range(1, self.window_size):
             tick_name = f'T{t}'
             for base_feature in self.BASE_FEATURES:
                 features.append(f'{base_feature}_{tick_name}')
+
+        # 趋势特征
+        features.extend(self.TREND_FEATURES)
 
         return features
 
