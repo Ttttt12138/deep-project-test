@@ -2,9 +2,16 @@ import argparse
 import base64
 from io import BytesIO
 from pathlib import Path
+import sys
 
 import matplotlib.pyplot as plt
 import pandas as pd
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.data_processing.csv_utils import read_csv
 
 
 def fig_to_base64(fig) -> str:
@@ -165,12 +172,12 @@ def main() -> None:
     if not logs_dir.exists():
         raise FileNotFoundError(f"Missing logs directory: {logs_dir}")
 
-    rolling_df = pd.read_csv(rolling_path)
+    rolling_df = read_csv(rolling_path)
     log_files = sorted(logs_dir.glob("*_summary.csv"))
     if not log_files:
         raise FileNotFoundError(f"No summary files found in {logs_dir}")
 
-    daily_df = pd.concat([pd.read_csv(f) for f in log_files], ignore_index=True)
+    daily_df = pd.concat([read_csv(f) for f in log_files], ignore_index=True)
     daily_df["date"] = pd.to_datetime(daily_df["date"], errors="coerce")
     daily_df = daily_df.dropna(subset=["date"]).sort_values("date")
     daily_df["date"] = daily_df["date"].dt.strftime("%Y-%m-%d")

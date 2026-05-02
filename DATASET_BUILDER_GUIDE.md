@@ -135,9 +135,9 @@ success = builder.step2_process_and_cleanup(
 ### 划分数据集 (可选)
 - **位置**: `{output_base_dir}/split_datasets/{date}/`
 - **文件**:
-  - `train.parquet`: 训练集
-  - `val.parquet`: 验证集
-  - `test.parquet`: 测试集
+  - `train.csv`: 训练集
+  - `val.csv`: 验证集
+  - `test.csv`: 测试集
 
 ## 验证和测试
 

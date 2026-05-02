@@ -1,356 +1,443 @@
-"""
-涨停预测系统主程序入口
-"""
+"""Canonical CLI entrypoint for the limit-up prediction project."""
+
+from __future__ import annotations
 
 import argparse
-import sys
 import os
-
-# 添加项目根目录到路径
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if project_root not in sys.path:
-    sys.path.append(project_root)
-
-from scripts.build_dataset import (
-    process_single_stock_csv, build_single_day_dataset, save_dataset, load_dataset, get_feature_columns
-)
-from scripts.extract_7z import (
-    SevenZipExtractor, batch_process_7z_files, validate_7z_structure
-)
-from src.models.lgbm_trainer import (
-    prepare_training_data, split_dataset_by_date, train_lgbm_classifier,
-    evaluate_model, get_feature_importance, predict_limit_up_probability
-)
-from src.data_processing.stock_utils import (
-    determine_stock_type, get_limit_ratio, get_stock_info
-)
-from src.data_processing.quality_check import (
-    run_quality_checks, print_quality_report
-)
-from src.data_processing.dataset_split import (
-    split_dataset_by_trading_day, save_split_datasets, load_split_datasets, validate_split
-)
-import build_2025_dataset  # 导入全年数据集构建模块
+import sys
 
 
-def main():
-    """主函数"""
-    parser = argparse.ArgumentParser(description='涨停预测系统')
-    parser.add_argument('--mode', type=str, choices=['build', 'extract', 'train', 'predict', 'check', 'split', 'stock-info', 'full'],
-                       default='build', help='运行模式')
-    parser.add_argument('--input', type=str, help='输入文件路径')
-    parser.add_argument('--output', type=str, default='data/processed/dataset.csv',
-                       help='输出文件路径')
-    parser.add_argument('--date', type=str, help='交易日期')
-    parser.add_argument('--code', type=str, help='股票代码')
-    parser.add_argument('--preclose', type=float, default=10.0, help='昨收价')
-    parser.add_argument('--model-path', type=str, default='models/lgbm_model.pkl',
-                       help='模型保存/加载路径')
-    parser.add_argument('--train-ratio', type=float, default=0.7,
-                       help='训练集比例')
-    parser.add_argument('--valid-ratio', type=float, default=0.15,
-                       help='验证集比例')
-    parser.add_argument('--threshold', type=float, default=0.7,
-                       help='预测概率阈值')
-    parser.add_argument('--split-dir', type=str, default='data/processed/split_datasets',
-                       help='划分后数据集目录')
-    parser.add_argument('--format', type=str, choices=['parquet', 'csv'],
-                       default='parquet', help='数据集格式')
-    parser.add_argument('--max-files', type=int, help='最大处理文件数（测试用）')
-    parser.add_argument('--sample', type=int, help='采样间隔（测试用）')
-    parser.add_argument('--max-months', type=int, default=3,
-                       help='最大月份数（默认3）')
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 
-    args = parser.parse_args()
 
-    # 处理full模式（构建全年数据集）
-    if args.mode == 'full':
-        print("模式: 构建2025全年数据集")
+def split_dataset_by_trading_day(df, train_ratio=0.70, val_ratio=0.15):
+    dates = sorted(df["date"].astype(str).unique())
+    train_end = int(len(dates) * train_ratio)
+    val_end = int(len(dates) * (train_ratio + val_ratio))
+    train_dates = dates[:train_end]
+    val_dates = dates[train_end:val_end]
+    test_dates = dates[val_end:]
+    return (
+        df[df["date"].astype(str).isin(train_dates)].copy(),
+        df[df["date"].astype(str).isin(val_dates)].copy(),
+        df[df["date"].astype(str).isin(test_dates)].copy(),
+    )
 
-        # 构造参数传递给build_2025_dataset
-        output_path = args.output or 'data/processed/2025_full_dataset.csv'
 
-        # 调用build_2025_dataset的构建函数
-        success = build_2025_dataset.build_full_year_dataset(
-            year='2025',
-            output_path=output_path,
-            max_files=getattr(args, 'max_files', None),
-            sample_files=getattr(args, 'sample', None),
-            split_dataset=True,  # 自动进行数据集划分
-            train_ratio=args.train_ratio,
-            val_ratio=args.valid_ratio,
-            max_months=getattr(args, 'max_months', 3)  # 前3个月
+def save_split_datasets(train_df, val_df, test_df, split_dir):
+    from src.data_processing.csv_utils import write_csv
+
+    os.makedirs(split_dir, exist_ok=True)
+    write_csv(train_df, os.path.join(split_dir, "train.csv"))
+    write_csv(val_df, os.path.join(split_dir, "validation.csv"))
+    write_csv(test_df, os.path.join(split_dir, "test.csv"))
+
+
+def validate_split(train_df, val_df, test_df):
+    issues = []
+    if train_df.empty:
+        issues.append("training set is empty")
+    if val_df.empty:
+        issues.append("validation set is empty")
+    if test_df.empty:
+        issues.append("test set is empty")
+    return {"passed": not issues, "issues": issues}
+
+
+def run_build(args):
+    from scripts.build_dataset import process_single_stock_csv, save_dataset
+
+    if not (args.input and args.code and args.date):
+        print("build mode requires --input, --code, and --date")
+        return 1
+    df = process_single_stock_csv(args.input, args.code, args.date, args.preclose)
+    if df.empty:
+        print("build failed: empty dataset")
+        return 1
+    save_dataset(df, args.output)
+    return 0
+
+
+def run_extract(args):
+    from scripts.extract_7z import SevenZipExtractor
+
+    if not args.input:
+        print("extract mode requires --input")
+        return 1
+    extractor = SevenZipExtractor(args.input)
+    extract_dir = extractor.extract_all(args.output)
+    print(f"extracted to: {extract_dir}")
+    return 0
+
+
+def run_split(args):
+    from scripts.build_dataset import load_dataset
+
+    if not args.input:
+        print("split mode requires --input")
+        return 1
+    df = load_dataset(args.input)
+    if df.empty:
+        print("dataset is empty")
+        return 1
+    if "date" not in df.columns:
+        print("dataset must contain a date column")
+        return 1
+    train_df, val_df, test_df = split_dataset_by_trading_day(df, args.train_ratio, args.valid_ratio)
+    validation_result = validate_split(train_df, val_df, test_df)
+    if not validation_result["passed"]:
+        print("split validation warnings:")
+        for issue in validation_result["issues"]:
+            print(f"  - {issue}")
+    save_split_datasets(train_df, val_df, test_df, args.split_dir)
+    print(f"split datasets saved to: {args.split_dir}")
+    return 0
+
+
+def _load_train_valid_test(args):
+    import pandas as pd
+    from sklearn.model_selection import train_test_split
+
+    from scripts.build_dataset import load_dataset
+    from src.models.lgbm_trainer import split_dataset_by_date
+
+    if args.input:
+        print(f"loading dataset: {args.input}")
+        full_df = load_dataset(args.input)
+        if full_df.empty:
+            raise ValueError("dataset is empty")
+        if "date" in full_df.columns and full_df["date"].nunique() > 1:
+            train_df, valid_df, test_df = split_dataset_by_date(full_df, args.train_ratio, args.valid_ratio)
+        else:
+            train_df, temp_df = train_test_split(full_df, test_size=(1 - args.train_ratio), random_state=42)
+            valid_ratio_adjusted = args.valid_ratio / (1 - args.train_ratio)
+            valid_df, test_df = train_test_split(
+                temp_df,
+                test_size=(1 - valid_ratio_adjusted),
+                random_state=42,
+            )
+        return full_df, train_df, valid_df, test_df
+
+    train_path = os.path.join(args.split_dir, "train.csv")
+    valid_path = os.path.join(args.split_dir, "validation.csv")
+    test_path = os.path.join(args.split_dir, "test.csv")
+    if not os.path.exists(train_path):
+        raise FileNotFoundError(f"training file not found: {train_path}")
+
+    train_df = load_dataset(train_path)
+    valid_df = load_dataset(valid_path) if os.path.exists(valid_path) else train_df.sample(frac=0.15, random_state=42)
+    test_df = load_dataset(test_path) if os.path.exists(test_path) else train_df.sample(frac=0.15, random_state=43)
+    full_df = pd.concat([train_df, valid_df, test_df], ignore_index=True)
+    return full_df, train_df, valid_df, test_df
+
+
+def run_train(args):
+    import joblib
+
+    from src.data_processing.csv_utils import get_feature_columns, write_csv
+    from src.models.lgbm_trainer import (
+        evaluate_model,
+        get_feature_importance,
+        optimize_lgbm_params,
+        prepare_training_data,
+        run_baseline_comparison,
+        train_lgbm_classifier,
+        walk_forward_validation,
+    )
+
+    try:
+        full_df, train_df, valid_df, test_df = _load_train_valid_test(args)
+    except Exception as exc:
+        print(f"failed to load training data: {exc}")
+        return 1
+
+    feature_cols = get_feature_columns(train_df)
+    if not feature_cols:
+        print("no feature columns found")
+        return 1
+
+    tuned_params = None
+    if args.tune:
+        print(f"Optuna tuning: n_trials={args.n_trials}, primary_metric={args.primary_metric}")
+        tuned_params = optimize_lgbm_params(
+            train_df,
+            valid_df,
+            feature_cols,
+            primary_metric=args.primary_metric,
+            n_trials=args.n_trials,
         )
+        print(f"best params: {tuned_params}")
 
-        if success:
-            print("\n数据集构建成功！")
-            sys.exit(0)
-        else:
-            print("\n数据集构建失败！")
-            sys.exit(1)
+    if args.validation_mode in {"walk-forward", "rolling"}:
+        if "date" not in full_df.columns:
+            print("walk-forward validation requires a date column")
+            return 1
+        wf_results = walk_forward_validation(
+            full_df,
+            feature_cols,
+            min_train_periods=args.min_train_periods,
+            primary_metric=args.primary_metric,
+            calibration=args.calibration,
+            params=tuned_params,
+        )
+        if wf_results.empty:
+            print("walk-forward validation produced no valid folds")
+            return 1
+        output_dir = os.path.dirname(args.model_path) or "models"
+        os.makedirs(output_dir, exist_ok=True)
+        wf_path = os.path.join(output_dir, "walk_forward_results.csv")
+        write_csv(wf_results, wf_path)
+        print(f"walk-forward results saved to: {wf_path}")
+        display_cols = [
+            col for col in ["fold", "val_date", "pr_auc", "daily_precision_at_10", "daily_recall_at_10"]
+            if col in wf_results.columns
+        ]
+        print(wf_results[display_cols].to_string(index=False))
+        return 0
 
-    if args.mode == 'build':
-        print("模式: 构建数据集")
+    print(f"train samples: {len(train_df):,}")
+    print(f"valid samples: {len(valid_df):,}")
+    print(f"test samples: {len(test_df):,}")
+    print(f"features: {len(feature_cols)}")
 
-        if args.input and args.code and args.date:
-            print(f"处理股票: {args.code}, 日期: {args.date}")
-            df = process_single_stock_csv(
-                args.input, args.code, args.date, args.preclose
-            )
+    X_train, y_train = prepare_training_data(train_df, feature_cols)
+    X_valid, y_valid = prepare_training_data(valid_df, feature_cols)
+    X_test, y_test = prepare_training_data(test_df, feature_cols)
 
-            if not df.empty:
-                save_dataset(df, args.output)
-            else:
-                print("处理失败，数据为空")
-        else:
-            print("构建模式需要 --input, --code, --date 参数")
+    model = train_lgbm_classifier(
+        X_train,
+        y_train,
+        X_valid,
+        y_valid,
+        params=tuned_params,
+        calibration=args.calibration,
+    )
+    metrics = evaluate_model(model, X_test, y_test, eval_df=test_df.loc[X_test.index])
 
-    elif args.mode == 'extract':
-        print("模式: 解压7z文件")
-        if args.input:
-            extractor = SevenZipExtractor(args.input)
-            extract_dir = extractor.extract_all(args.output)
-            print(f"解压完成: {extract_dir}")
-        else:
-            print("解压模式需要 --input 参数")
-
-    elif args.mode == 'train':
-        print("模式: 训练模型")
-        if args.input:
-            # 加载数据集
-            print(f"加载数据集: {args.input}")
-            df = load_dataset(args.input)
-
-            if df.empty:
-                print("错误: 数据集为空")
-                return
-
-            # 获取特征列
-            feature_cols = get_feature_columns(df)
-            print(f"找到 {len(feature_cols)} 个特征")
-
-            if len(feature_cols) == 0:
-                print("错误: 未找到特征列")
-                return
-
-            # 检查是否有date列用于按日期划分
-            if 'date' not in df.columns:
-                print("警告: 数据集缺少date列，将使用随机划分")
-                from sklearn.model_selection import train_test_split
-                # 简单的随机划分
-                train_df, temp_df = train_test_split(df, test_size=(1-args.train_ratio), random_state=42)
-                valid_ratio_adjusted = args.valid_ratio / (1-args.train_ratio)
-                valid_df, test_df = train_test_split(temp_df,
-                                                   test_size=(1-valid_ratio_adjusted),
-                                                   random_state=42)
-            else:
-                train_df, valid_df, test_df = split_dataset_by_date(df, args.train_ratio, args.valid_ratio)
-
-            print(f"训练集: {len(train_df)} 样本")
-            print(f"验证集: {len(valid_df)} 样本")
-            print(f"测试集: {len(test_df)} 样本")
-
-            # 准备训练数据
-            print("准备训练数据...")
-            X_train, y_train = prepare_training_data(train_df, feature_cols)
-            X_valid, y_valid = prepare_training_data(valid_df, feature_cols)
-            X_test, y_test = prepare_training_data(test_df, feature_cols)
-
-            print(f"训练数据形状: X={X_train.shape}, y={y_train.shape}")
-            print(f"验证数据形状: X={X_valid.shape}, y={y_valid.shape}")
-            print(f"测试数据形状: X={X_test.shape}, y={y_test.shape}")
-
-            # 训练模型
-            print("开始训练LightGBM模型...")
-            model = train_lgbm_classifier(X_train, y_train, X_valid, y_valid)
-
-            # 评估模型
-            print("评估模型性能...")
-            metrics = evaluate_model(model, X_test, y_test)
-
-            print("\n模型评估结果:")
-            for metric_name, metric_value in metrics.items():
-                print(f"  {metric_name}: {metric_value:.4f}")
-
-            # 特征重要性
-            print("\n特征重要性 (Top 10):")
-            importance_df = get_feature_importance(model, feature_cols)
-            print(importance_df.head(10).to_string(index=False))
-
-            # 保存模型
-            import joblib
-            os.makedirs(os.path.dirname(args.model_path), exist_ok=True)
-            joblib.dump(model, args.model_path)
-            print(f"\n模型已保存到: {args.model_path}")
-
-        else:
-            print("训练模式需要 --input 参数（数据集路径）")
-
-    elif args.mode == 'predict':
-        print("模式: 预测")
-        if args.input and os.path.exists(args.model_path):
-            # 加载模型
-            import joblib
-            print(f"加载模型: {args.model_path}")
-            model = joblib.load(args.model_path)
-
-            # 加载待预测数据
-            print(f"加载数据: {args.input}")
-            df = load_dataset(args.input)
-
-            if df.empty:
-                print("错误: 数据集为空")
-                return
-
-            # 获取特征列
-            feature_cols = get_feature_columns(df)
-            print(f"找到 {len(feature_cols)} 个特征")
-
-            if len(feature_cols) == 0:
-                print("错误: 未找到特征列")
-                return
-
-            # 准备预测数据
-            X, _ = prepare_training_data(df, feature_cols)
-            print(f"预测数据形状: {X.shape}")
-
-            # 预测涨停概率
-            print("开始预测...")
-            probabilities = predict_limit_up_probability(model, X)
-
-            # 添加预测结果到原始数据
-            df['limit_up_probability'] = probabilities
-            df['prediction'] = (probabilities >= args.threshold).astype(int)
-
-            # 统计预测结果
-            print(f"\n预测结果统计:")
-            print(f"  平均涨停概率: {probabilities.mean():.4f}")
-            print(f"  高概率样本数 (≥{args.threshold}): {(probabilities >= args.threshold).sum()}")
-            print(f"  预测涨停数: {df['prediction'].sum()}")
-            print(f"  总样本数: {len(df)}")
-
-            # 保存预测结果
-            output_path = args.output.replace('.csv', '_predictions.csv')
-            df.to_csv(output_path, index=False)
-            print(f"\n预测结果已保存到: {output_path}")
-
-            # 显示一些高概率样本
-            high_prob_samples = df[df['limit_up_probability'] >= args.threshold].head(10)
-            if not high_prob_samples.empty:
-                print("\n高概率涨停样本 (Top 10):")
-                display_cols = ['code', 'date', 'limit_up_probability', 'prediction']
-                available_cols = [col for col in display_cols if col in high_prob_samples.columns]
-                print(high_prob_samples[available_cols].to_string(index=False))
-
-        else:
-            if not args.input:
-                print("预测模式需要 --input 参数（待预测数据路径）")
-            if not os.path.exists(args.model_path):
-                print(f"错误: 模型文件不存在: {args.model_path}")
-
-    elif args.mode == 'check':
-        print("模式: 数据质量检查")
-        if args.input:
-            # 加载数据集
-            print(f"加载数据集: {args.input}")
-            df = load_dataset(args.input)
-
-            if df.empty:
-                print("错误: 数据集为空")
-                return
-
-            # 定义必需特征
-            REQUIRED_FEATURES = [
-                'dist_to_limit', 'ticks_to_limit', 'ask1_to_limit', 'ask1_gap',
-                'bid_depth', 'ask_depth', 'order_imbalance', 'b1_volume', 'a1_volume',
-                'spread', 'ask_slope', 'bid_slope',
-                'ret_1tick', 'vol_delta', 'money_delta'
+    if args.run_baselines:
+        baseline_df = run_baseline_comparison(train_df, valid_df, test_df, feature_cols, lgbm_params=tuned_params)
+        baseline_path = args.model_path.replace(".pkl", "_baselines.csv")
+        write_csv(baseline_df, baseline_path)
+        print(f"baseline comparison saved to: {baseline_path}")
+        display_cols = [
+            col for col in [
+                "model", "pr_auc", "precision_at_10", "recall_at_10",
+                "daily_precision_at_10", "daily_recall_at_10",
             ]
+            if col in baseline_df.columns
+        ]
+        print(baseline_df[display_cols].to_string(index=False))
 
-            # 运行质量检查
-            print("运行质量检查...")
-            quality_results = run_quality_checks(df, REQUIRED_FEATURES)
-
-            # 打印质量报告
-            print_quality_report(quality_results)
-
-            # 检查是否全部通过
-            all_passed = all(result['passed'] for result in quality_results)
-            if all_passed:
-                print("\n数据集质量良好，可用于训练！")
-                sys.exit(0)
-            else:
-                print("\n数据集存在问题，请查看详细信息！")
-                sys.exit(1)
+    print("\nmodel metrics:")
+    for metric_name, metric_value in metrics.items():
+        if isinstance(metric_value, (int, float)):
+            print(f"  {metric_name}: {metric_value:.4f}")
         else:
-            print("质量检查模式需要 --input 参数（数据集路径）")
+            print(f"  {metric_name}: {metric_value}")
 
-    elif args.mode == 'split':
-        print("模式: 数据集划分")
-        if args.input:
-            # 加载数据集
-            print(f"加载数据集: {args.input}")
-            df = load_dataset(args.input)
+    model_path = args.model_path
+    os.makedirs(os.path.dirname(model_path) or ".", exist_ok=True)
+    joblib.dump(model, model_path)
+    print(f"model saved to: {model_path}")
 
-            if df.empty:
-                print("错误: 数据集为空")
-                return
+    importance_df = get_feature_importance(model, feature_cols)
+    importance_path = model_path.replace(".pkl", "_feature_importance.csv")
+    write_csv(importance_df, importance_path)
+    print(f"feature importance saved to: {importance_path}")
+    return 0
 
-            if 'date' not in df.columns:
-                print("错误: 数据集缺少date列，无法按交易日划分")
-                return
 
-            # 按交易日划分数据集
-            print(f"按交易日划分数据集（训练集 {args.train_ratio:.0%}, 验证集 {args.valid_ratio:.0%}, "
-                  f"测试集 {1-args.train_ratio-args.valid_ratio:.0%}）...")
+def run_predict(args):
+    import joblib
+    import numpy as np
 
-            train_df, val_df, test_df = split_dataset_by_trading_day(
-                df,
-                train_ratio=args.train_ratio,
-                val_ratio=args.valid_ratio,
-                test_ratio=1.0 - args.train_ratio - args.valid_ratio
-            )
+    from scripts.build_dataset import load_dataset
+    from src.data_processing.csv_utils import get_feature_columns, write_csv
 
-            # 验证划分
-            validation_result = validate_split(train_df, val_df, test_df)
-            if not validation_result['passed']:
-                print("\n划分验证警告:")
-                for issue in validation_result['issues']:
-                    print(f"  - {issue}")
+    if not args.input:
+        print("predict mode requires --input")
+        return 1
+    if not os.path.exists(args.model_path):
+        print(f"model file does not exist: {args.model_path}")
+        return 1
+    model = joblib.load(args.model_path)
+    df = load_dataset(args.input)
+    if df.empty:
+        print("dataset is empty")
+        return 1
+    feature_cols = get_feature_columns(df)
+    if not feature_cols:
+        print("no feature columns found")
+        return 1
+    X = df[feature_cols]
+    valid_mask = X.notna().all(axis=1)
+    probabilities = np.full(len(df), np.nan, dtype=float)
+    if valid_mask.any():
+        probabilities[valid_mask.to_numpy()] = model.predict_proba(X.loc[valid_mask])[:, 1]
+    df["limit_up_probability"] = probabilities
+    df["prediction"] = (df["limit_up_probability"] >= args.threshold).astype(int)
+    output_path = args.output
+    if output_path == "data/processed/dataset.csv":
+        output_path = args.input.replace(".csv", "_predictions.csv")
+    write_csv(df, output_path)
+    print(f"predictions saved to: {output_path}")
+    return 0
 
-            # 保存划分后的数据集
-            print(f"\n保存划分后的数据集到: {args.split_dir}")
-            save_split_datasets(train_df, val_df, test_df, args.split_dir, format=args.format)
 
-            print("\n数据集划分完成！")
+def run_check(args):
+    from scripts.build_dataset import load_dataset
+    from src.data_processing.quality_check import print_quality_report, run_quality_checks
 
-        else:
-            print("数据集划分模式需要 --input 参数（数据集路径）")
+    if not args.input:
+        print("check mode requires --input")
+        return 1
+    df = load_dataset(args.input)
+    if df.empty:
+        print("dataset is empty")
+        return 1
+    tick_required_features = [
+        "dist_to_limit", "ticks_to_limit", "ask1_to_limit", "ask1_gap",
+        "bid_depth", "ask_depth", "order_imbalance", "b1_volume", "a1_volume",
+        "spread", "ask_slope", "bid_slope", "ret_1tick", "vol_delta", "money_delta",
+        "weighted_bid_pressure", "weighted_ask_pressure", "bid_ask_depth_ratio",
+        "spread_pct", "ticks_to_limit_current",
+    ]
+    window_required_features = [
+        "dist_to_limit_last", "order_imbalance_last", "b1_volume_last",
+        "a1_volume_last", "money_delta_last", "weighted_bid_pressure_last",
+        "weighted_ask_pressure_last", "bid_ask_depth_ratio_last",
+        "spread_pct_last", "ticks_to_limit_current_last",
+        "dist_to_limit_T1", "order_imbalance_T1",
+        "dist_to_limit_slope", "money_delta_accel",
+        "weighted_bid_pressure_trend", "spread_pct_trend",
+    ]
+    required_features = window_required_features if "dist_to_limit_last" in df.columns else tick_required_features
+    quality_results = run_quality_checks(df, required_features)
+    if "dist_to_limit_last" in df.columns and "code" in df.columns and "time" in df.columns:
+        for result in quality_results:
+            if result["check_name"] == "time_monotonic" and not result["passed"]:
+                grouped_monotonic = df.groupby("code", sort=False)["time"].apply(lambda s: s.is_monotonic_increasing)
+                if bool(grouped_monotonic.all()):
+                    result["passed"] = True
+                    result["message"] = "time is monotonic within each code"
+                    result["details"] = {
+                        "is_monotonic": True,
+                        "grouped_by": "code",
+                        "groups": int(grouped_monotonic.size),
+                    }
+    print_quality_report(quality_results)
+    return 0 if all(result["passed"] for result in quality_results) else 1
 
-    elif args.mode == 'stock-info':
-        print("模式: 股票信息查询")
-        if args.code:
-            # 查询股票信息
-            stock_info = get_stock_info(args.code)
 
-            print("\n股票信息:")
-            print(f"  股票代码: {stock_info['stock_code']}")
-            print(f"  股票类型: {stock_info['stock_type'].upper()}")
-            print(f"  涨停比例: {stock_info['limit_ratio']:.0%}")
-            print(f"  是否ST: {'是' if stock_info['is_st'] else '否'}")
+def run_stock_info(args):
+    from src.data_processing.stock_utils import get_stock_info
 
-            # 显示股票类型说明
-            type_descriptions = {
-                'st': 'ST股票（5%涨停）',
-                'gem': '创业板（20%涨停）',
-                'kcb': '科创板（20%涨停）',
-                'bse': '北交所（30%涨停）',
-                'normal': '普通股（10%涨停）'
-            }
-            print(f"  说明: {type_descriptions.get(stock_info['stock_type'], '未知')}")
-        else:
-            print("股票信息查询模式需要 --code 参数（股票代码）")
+    if not args.code:
+        print("stock-info mode requires --code")
+        return 1
+    stock_info = get_stock_info(args.code)
+    print(f"stock_code: {stock_info['stock_code']}")
+    print(f"stock_type: {stock_info['stock_type'].upper()}")
+    print(f"limit_ratio: {stock_info['limit_ratio']:.0%}")
+    print(f"is_st: {stock_info['is_st']}")
+    return 0
+
+
+def run_full(args):
+    import build_2025_dataset
+
+    output_path = args.output
+    if output_path == "data/processed/dataset.csv":
+        output_path = "data/processed/2025_full_dataset.csv"
+    success = build_2025_dataset.build_full_year_dataset(
+        year="2025",
+        output_path=output_path,
+        max_files=args.max_files,
+        sample_files=args.sample,
+        split_dataset=True,
+        train_ratio=args.train_ratio,
+        val_ratio=args.valid_ratio,
+        max_months=args.max_months,
+    )
+    return 0 if success else 1
+
+
+def run_merge(args):
+    from scripts.training_set_builder import merge_training_shards
+
+    success = merge_training_shards(args.shards_dir, args.merged_output)
+    return 0 if success else 1
+
+
+def run_rolling_cv(args):
+    from scripts.rolling_cv import run_rolling_cv
+
+    result = run_rolling_cv()
+    return 0 if result is not None else 1
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description="Limit-up prediction system")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=[
+            "build", "extract", "train", "predict", "check", "split",
+            "stock-info", "full", "merge", "rolling-cv",
+        ],
+        default="build",
+        help="Run mode",
+    )
+    parser.add_argument("--input", type=str, help="Input file path")
+    parser.add_argument("--input-dir", type=str, help="Input directory")
+    parser.add_argument("--output", type=str, default="data/processed/dataset.csv", help="Output CSV path")
+    parser.add_argument("--date", type=str, help="Trading date")
+    parser.add_argument("--code", type=str, help="Stock code")
+    parser.add_argument("--preclose", type=float, default=10.0, help="Previous close")
+    parser.add_argument("--model-path", type=str, default="models/lgbm_model.pkl", help="Model save/load path")
+    parser.add_argument("--train-ratio", type=float, default=0.70, help="Train split ratio")
+    parser.add_argument("--valid-ratio", type=float, default=0.15, help="Validation split ratio")
+    parser.add_argument("--threshold", type=float, default=0.70, help="Prediction threshold")
+    parser.add_argument("--split-dir", type=str, default="data/processed/split_datasets", help="Split dataset directory")
+    parser.add_argument("--format", type=str, choices=["csv"], default="csv", help="Dataset format")
+    parser.add_argument("--max-files", type=int, help="Maximum files to process")
+    parser.add_argument("--sample", type=int, help="Sampling interval")
+    parser.add_argument("--max-months", type=int, default=3, help="Maximum months")
+    parser.add_argument("--shards-dir", type=str, default="data/daily_train_undersampled", help="Training shard directory")
+    parser.add_argument("--merged-output", type=str, default="data/merged/multi_day_train.csv", help="Merged CSV output")
+    parser.add_argument("--validation-mode", choices=["single", "walk-forward", "rolling"], default="single")
+    parser.add_argument("--min-train-periods", type=int, default=3, help="Minimum dates before rolling validation starts")
+    parser.add_argument(
+        "--primary-metric",
+        choices=["pr_auc", "recall_at_10", "recall_at_50", "daily_recall_at_10", "daily_recall_at_50"],
+        default="pr_auc",
+    )
+    parser.add_argument("--calibration", choices=["none", "sigmoid", "isotonic"], default="sigmoid")
+    parser.add_argument("--tune", action="store_true", help="Run Optuna hyperparameter tuning")
+    parser.add_argument("--n-trials", type=int, default=30, help="Optuna trial count")
+    parser.add_argument("--run-baselines", action="store_true", help="Evaluate rule, logistic, and LightGBM baselines")
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    handlers = {
+        "build": run_build,
+        "extract": run_extract,
+        "train": run_train,
+        "predict": run_predict,
+        "check": run_check,
+        "split": run_split,
+        "stock-info": run_stock_info,
+        "full": run_full,
+        "merge": run_merge,
+        "rolling-cv": run_rolling_cv,
+    }
+    return handlers[args.mode](args)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

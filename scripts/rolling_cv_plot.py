@@ -19,20 +19,45 @@ plt.rcParams['axes.unicode_minus'] = False
 
 # 项目根目录
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from src.data_processing.csv_utils import read_csv
+
 RESULTS_FILE = os.path.join(PROJECT_ROOT, 'data', 'rolling_cv', 'results.csv')
+LEGACY_RESULTS_FILE = os.path.join(PROJECT_ROOT, 'data', 'rolling_cv', 'results_fixed.csv')
 OUTPUT_FILE = os.path.join(PROJECT_ROOT, 'data', 'rolling_cv', 'rolling_cv_plot.png')
+
+
+def _resolve_results_file() -> str:
+    if os.path.exists(RESULTS_FILE):
+        return RESULTS_FILE
+    if os.path.exists(LEGACY_RESULTS_FILE):
+        return LEGACY_RESULTS_FILE
+    return RESULTS_FILE
+
+
+def _format_month(value) -> str:
+    text = str(value)
+    if len(text) >= 7 and text[4] == "-":
+        return text[:7]
+    try:
+        return f"{int(value):02d}"
+    except (TypeError, ValueError):
+        return text
 
 
 def plot_rolling_cv_results():
     """绘制滚动验证结果"""
-    if not os.path.exists(RESULTS_FILE):
+    results_file = _resolve_results_file()
+    if not os.path.exists(results_file):
         print(f"错误: 结果文件不存在: {RESULTS_FILE}")
         print("请先运行: python scripts/rolling_cv.py")
         sys.exit(1)
 
     # 读取结果
-    df = pd.read_csv(RESULTS_FILE)
-    print(f"加载结果: {RESULTS_FILE}")
+    df = read_csv(results_file)
+    print(f"加载结果: {results_file}")
     print(f"Folds: {len(df)}")
 
     # 创建图形
@@ -40,7 +65,7 @@ def plot_rolling_cv_results():
     fig.suptitle('Rolling Cross-Validation Results', fontsize=14, fontweight='bold')
 
     # 月份标签
-    months = [f"{int(m):02d}" for m in df['val_month']]
+    months = [_format_month(m) for m in df['val_month']]
     x = range(len(months))
 
     # 1. ROC-AUC 趋势

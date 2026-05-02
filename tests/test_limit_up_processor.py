@@ -67,7 +67,7 @@ class TestDataLoader:
     def _create_mock_tick_data(self):
         """创建模拟的tick数据"""
         data = {
-            'time': ['20250102091500', '20250102091509', '20250102091518'],
+            'time': ['20250102093000', '20250102093009', '20250102093018'],
             'open': [10.00, 10.01, 10.02],
             'current': [10.00, 10.01, 10.02],
             'high': [10.02, 10.03, 10.04],
@@ -98,7 +98,7 @@ class TestDataCleaner:
         """测试过滤无效数据"""
         # Arrange
         data = {
-            'time': ['20250102091500', '20250102091509', '20250102091518', '20250102091527'],
+            'time': ['20250102093000', '20250102093009', '20250102093018', '20250102093027'],
             'current': [10.00, 0.00, 10.02, 0.00],
             'open': [10.00, 0.00, 10.02, 0.00],
             'volume': [1000, 0, 1000, 0]
@@ -107,18 +107,19 @@ class TestDataCleaner:
 
         # Act
         from src.data_processing.limit_up_processor import filter_invalid_ticks
-        cleaned_df = filter_invalid_ticks(df)
+        cleaned_df, stats = filter_invalid_ticks(df)
 
         # Assert
         assert len(cleaned_df) == 2
         assert all(cleaned_df['current'] > 0)
         assert all(cleaned_df['volume'] > 0)
+        assert stats['invalid_price'] == 2
 
     def test_convert_time_format(self):
         """测试时间格式转换"""
         # Arrange
         data = {
-            'time': ['20250102091500', '20250102091509', '20250102091518'],
+            'time': ['20250102093000', '20250102093009', '20250102093018'],
             'current': [10.00, 10.01, 10.02]
         }
         df = pd.DataFrame(data)
@@ -129,7 +130,7 @@ class TestDataCleaner:
 
         # Assert
         assert pd.api.types.is_datetime64_any_dtype(converted_df['time'])
-        assert converted_df['time'].iloc[0] == pd.to_datetime('2025-01-02 09:15:00')
+        assert converted_df['time'].iloc[0] == pd.to_datetime('2025-01-02 09:30:00')
 
     def test_sort_by_time(self):
         """测试按时间排序"""

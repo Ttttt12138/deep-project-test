@@ -14,12 +14,11 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 from src.data_processing import preprocess_pipeline
-from src.feature_engineering import (
-    extract_price_features_vectorized,
-    extract_volume_features_vectorized,
-    extract_orderbook_features_vectorized,
-    generate_labels_vectorized
-)
+from src.data_processing.csv_utils import read_csv, write_csv
+from src.feature_engineering.label_generation import generate_labels_vectorized
+from src.feature_engineering.orderbook_features import extract_orderbook_features_vectorized
+from src.feature_engineering.price_features import extract_price_features_vectorized
+from src.feature_engineering.volume_features import extract_volume_features_vectorized
 
 
 def process_single_window(df: pd.DataFrame) -> pd.Series:
@@ -167,7 +166,7 @@ def save_feature_dataset(feature_df: pd.DataFrame, output_path: str):
         feature_df: 特征DataFrame
         output_path: 输出文件路径
     """
-    feature_df.to_csv(output_path, index=False)
+    write_csv(feature_df, output_path)
     print(f"特征数据集已保存到: {output_path}")
 
 
@@ -181,6 +180,6 @@ def load_feature_dataset(input_path: str) -> pd.DataFrame:
     Returns:
         特征DataFrame
     """
-    feature_df = pd.read_csv(input_path)
+    feature_df = read_csv(input_path)
     print(f"特征数据集已加载: {len(feature_df)} 个样本，{len(feature_df.columns)} 个特征")
     return feature_df

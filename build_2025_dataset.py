@@ -13,7 +13,7 @@ import pandas as pd
 from tqdm import tqdm
 
 # 添加项目根目录到路径
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
@@ -29,8 +29,51 @@ from src.feature_engineering.limit_up_features import extract_limit_up_features
 from src.data_processing.limit_up_processor_optimized import process_tick_file_optimized as process_tick_file
 from src.data_processing.stock_utils import determine_stock_type, get_limit_ratio
 from src.data_processing.quality_check import run_quality_checks, print_quality_report
-from src.data_processing.dataset_split import split_dataset_by_trading_day, save_split_datasets
+from src.data_processing.csv_utils import read_csv, write_csv
 from src.data_processing.sampling import undersample_train_set
+
+
+def split_dataset_by_trading_day(df: pd.DataFrame,
+                                 train_ratio: float = 0.70,
+                                 val_ratio: float = 0.15,
+                                 test_ratio: float = 0.15,
+                                 train_date_range=None,
+                                 val_date_range=None,
+                                 test_date_range=None):
+    """Split data by date without relying on the removed dataset_split module."""
+    if train_date_range or val_date_range or test_date_range:
+        def select_range(date_range):
+            if not date_range:
+                return pd.DataFrame(columns=df.columns)
+            start, end = date_range
+            return df[(df["date"] >= start) & (df["date"] <= end)].copy()
+
+        return select_range(train_date_range), select_range(val_date_range), select_range(test_date_range)
+
+    dates = sorted(df["date"].astype(str).unique())
+    n_dates = len(dates)
+    train_end = int(n_dates * train_ratio)
+    val_end = int(n_dates * (train_ratio + val_ratio))
+
+    train_dates = dates[:train_end]
+    val_dates = dates[train_end:val_end]
+    test_dates = dates[val_end:]
+
+    return (
+        df[df["date"].astype(str).isin(train_dates)].copy(),
+        df[df["date"].astype(str).isin(val_dates)].copy(),
+        df[df["date"].astype(str).isin(test_dates)].copy(),
+    )
+
+
+def save_split_datasets(train_df: pd.DataFrame, val_df: pd.DataFrame,
+                        test_df: pd.DataFrame, output_dir: str,
+                        format: str = "csv") -> None:
+    """Save split datasets as canonical CSV files."""
+    os.makedirs(output_dir, exist_ok=True)
+    write_csv(train_df, os.path.join(output_dir, "train.csv"))
+    write_csv(val_df, os.path.join(output_dir, "validation.csv"))
+    write_csv(test_df, os.path.join(output_dir, "test.csv"))
 
 
 def find_2025_data_files(max_months=3):
@@ -132,7 +175,7 @@ def process_single_day(archive_path, extract_base_dir, temp_dir_prefix="temp_ext
                 # 获取基准价格（从盘口价格获取，因为没有昨收价）
                 preclose = None
                 try:
-                    df_raw = pd.read_csv(csv_file, nrows=100)  # 读取更多行找到有效价格
+                    df_raw = read_csv(csv_file, nrows=100, preserve_code=False)  # 读取更多行找到有效价格
 
                     # 尝试从盘口价格获取基准价
                     # 优先使用买一价格，其次用卖一价格
@@ -270,7 +313,7 @@ def build_full_year_dataset(year="2025", output_path="data/processed/2025_full_d
             # 定期保存中间结果（每10个交易日）
             if len(all_data) % 10 == 0:
                 temp_df = pd.concat(all_data, ignore_index=True)
-                temp_path = f"{output_path}.temp_{len(all_data)}_days"
+                temp_path = output_path.replace(".csv", f".temp_{len(all_data)}_days.csv")
                 save_dataset(temp_df, temp_path)
                 print(f"已保存中间结果: {temp_path}")
 
@@ -349,7 +392,7 @@ def build_full_year_dataset(year="2025", output_path="data/processed/2025_full_d
 
             # 保存划分后的数据集
             split_output_dir = os.path.join(os.path.dirname(output_path), 'split_datasets')
-            save_split_datasets(train_df, val_df, test_df, split_output_dir, format='parquet')
+            save_split_datasets(train_df, val_df, test_df, split_output_dir, format='csv')
 
             print("\n✅ 数据集划分完成！")
             print(f"训练集: {len(train_df):,} 样本 ({len(train_df)/len(final_df):.2%})")
@@ -417,8 +460,8 @@ def build_incremental_dataset(year="2025", output_dir="data/processed/2025_incre
         if batch_data:
             try:
                 batch_df = pd.concat(batch_data, ignore_index=True)
-                batch_path = os.path.join(output_dir, f"batch_{batch_idx // batch_size + 1}.parquet")
-                batch_df.to_parquet(batch_path, index=False)
+                batch_path = os.path.join(output_dir, f"batch_{batch_idx // batch_size + 1}.csv")
+                write_csv(batch_df, batch_path)
                 print(f"批次保存完成: {batch_path} (成功: {processed_count}, 失败: {failed_count})")
             except Exception as e:
                 print(f"批次保存失败: {e}")
@@ -430,7 +473,7 @@ def build_incremental_dataset(year="2025", output_dir="data/processed/2025_incre
 
 
 def merge_incremental_datasets(inc_dir="data/processed/2025_incremental",
-                              output_path="data/processed/2025_full_dataset.parquet"):
+                              output_path="data/processed/2025_full_dataset.csv"):
     """
     合并增量数据集
 
@@ -443,7 +486,7 @@ def merge_incremental_datasets(inc_dir="data/processed/2025_incremental",
     print("="*80)
 
     # 查找所有批次文件
-    batch_files = sorted(glob.glob(os.path.join(inc_dir, "batch_*.parquet")))
+    batch_files = sorted(glob.glob(os.path.join(inc_dir, "batch_*.csv")))
 
     if not batch_files:
         print("错误: 未找到批次文件")
@@ -454,14 +497,14 @@ def merge_incremental_datasets(inc_dir="data/processed/2025_incremental",
     # 读取并合并
     all_data = []
     for batch_file in tqdm(batch_files, desc="读取批次文件"):
-        batch_df = pd.read_parquet(batch_file)
+        batch_df = read_csv(batch_file)
         all_data.append(batch_df)
 
     # 合并
     final_df = pd.concat(all_data, ignore_index=True)
 
     # 保存
-    final_df.to_parquet(output_path, index=False)
+    write_csv(final_df, output_path)
     print(f"合并完成: {output_path}")
     print(f"总样本数: {len(final_df)}")
 
@@ -534,7 +577,7 @@ def main():
         )
     elif args.mode == 'incremental':
         # 增量构建
-        inc_dir = args.output.replace('.csv', '_incremental').replace('.parquet', '_incremental')
+        inc_dir = args.output.replace('.csv', '_incremental')
         success = build_incremental_dataset(
             year=args.year,
             output_dir=inc_dir,
@@ -542,7 +585,7 @@ def main():
         )
     elif args.mode == 'merge':
         # 合并增量数据集
-        inc_dir = args.output.replace('.csv', '_incremental').replace('.parquet', '_incremental')
+        inc_dir = args.output.replace('.csv', '_incremental')
         success = merge_incremental_datasets(
             inc_dir=inc_dir,
             output_path=args.output

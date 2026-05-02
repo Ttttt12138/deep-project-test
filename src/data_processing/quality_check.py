@@ -403,3 +403,45 @@ def print_quality_report(quality_results: List[Dict[str, any]]):
         print("✅ 所有质量检查通过！")
     else:
         print(f"❌ 有 {total_count - passed_count} 项检查失败，请查看详细信息")
+
+def print_quality_report_ascii(quality_results: List[Dict[str, any]]):
+    """Print a console-safe quality report."""
+    print("\n" + "=" * 80)
+    print("Data quality check report")
+    print("=" * 80)
+
+    passed_count = sum(1 for result in quality_results if result["passed"])
+    total_count = len(quality_results)
+
+    for i, result in enumerate(quality_results, 1):
+        status = "[PASS]" if result["passed"] else "[FAIL]"
+        print(f"\n{i}. {result['check_name'].upper().replace('_', ' ')}: {status}")
+        print(f"   {result['message']}")
+
+        if result["check_name"] == "positive_samples" and "details" in result:
+            details = result["details"]
+            print(f"   total samples: {details['total_samples']:,}")
+            print(f"   positives: {details['positive_count']:,}")
+            print(f"   negatives: {details['negative_count']:,}")
+            print(f"   positive ratio: {details['positive_ratio']:.4%}")
+        elif result["check_name"] == "feature_completeness" and "details" in result:
+            details = result["details"]
+            print(f"   required features: {details['required_count']}")
+            print(f"   actual columns: {details['existing_count']}")
+            if details["missing_features"]:
+                print(f"   missing features: {', '.join(details['missing_features'][:10])}")
+        elif result["check_name"] == "date_distribution" and "details" in result:
+            details = result["details"]
+            print(f"   unique dates: {details['unique_dates']}")
+            print(f"   samples per date: {details['samples_per_date']:.0f}")
+
+    print("\n" + "=" * 80)
+    print(f"Overall: {passed_count}/{total_count} checks passed")
+    print("=" * 80)
+    if passed_count == total_count:
+        print("[PASS] all quality checks passed")
+    else:
+        print(f"[FAIL] {total_count - passed_count} quality checks failed")
+
+
+print_quality_report = print_quality_report_ascii

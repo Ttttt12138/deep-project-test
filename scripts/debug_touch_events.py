@@ -24,6 +24,7 @@ from src.feature_engineering.event_window_builder import EventWindowBuilder
 from src.feature_engineering.limit_up_features import extract_limit_up_features
 from src.data_processing.limit_up_processor_optimized import process_tick_file_optimized
 from src.data_processing.stock_utils import determine_stock_type, get_limit_ratio
+from src.data_processing.csv_utils import read_csv
 
 
 def diagnose_single_stock(csv_file: str, verbose: bool = True) -> dict:
@@ -208,7 +209,7 @@ def diagnose_single_stock(csv_file: str, verbose: bool = True) -> dict:
 def _get_benchmark_price(csv_file: Path) -> float:
     """获取基准价格（复制自training_set_builder.py）"""
     try:
-        df_raw = pd.read_csv(csv_file, nrows=100)
+        df_raw = read_csv(csv_file, nrows=100, preserve_code=False)
 
         # 优先级：买一价 > 卖一价 > 开盘价 > 当前价
         for price_col in ['b1_p', 'a1_p', 'open', 'current']:

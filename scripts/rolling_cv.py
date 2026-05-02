@@ -6,18 +6,22 @@
 
 import pandas as pd
 import numpy as np
-import lightgbm as lgb
-import joblib
 import glob
 import os
+import sys
 from pathlib import Path
-from sklearn.metrics import roc_auc_score, average_precision_score
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+from src.data_processing.csv_utils import get_feature_columns, read_csv, write_csv
+from src.models.lgbm_trainer import evaluate_predictions
 
 
 # ================================================================
 # 配置
 # ================================================================
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CANDIDATES_DIR = os.path.join(PROJECT_ROOT, "data/daily_train_candidates")
 UNDERSAMPLED_DIR = os.path.join(PROJECT_ROOT, "data/daily_train_undersampled")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "data/rolling_cv")
@@ -38,10 +42,6 @@ LGBM_PARAMS = {
     "verbose": -1,
 }
 
-META_COLS = {"date", "code", "time", "label",
-             "window_start_time", "window_end_time", "month", "Unnamed: 0"}
-
-
 # ================================================================
 # 数据加载
 # ================================================================
@@ -61,7 +61,7 @@ def load_undersampled_by_month(directory: str) -> dict:
         files = sorted(glob.glob(os.path.join(month_dir, "*_train.csv")))
         dfs = []
         for f in files:
-            df = pd.read_csv(f)
+            df = read_csv(f)
             stem = Path(f).stem
             date_part = stem[:10]
             df["date"] = date_part
@@ -74,7 +74,7 @@ def load_undersampled_by_month(directory: str) -> dict:
 
 
 def get_feature_cols(df: pd.DataFrame) -> list:
-    return [c for c in df.columns if c not in META_COLS]
+    return get_feature_columns(df)
 
 
 def load_candidates_for_month(month: str) -> pd.DataFrame:
@@ -89,7 +89,7 @@ def load_candidates_for_month(month: str) -> pd.DataFrame:
 
     dfs = []
     for f in files:
-        df = pd.read_csv(f)
+        df = read_csv(f)
         stem = Path(f).stem
         date_part = stem[:10]
         df["date"] = date_part
@@ -103,44 +103,32 @@ def load_candidates_for_month(month: str) -> pd.DataFrame:
 # ================================================================
 # 指标计算
 # ================================================================
-def compute_metrics(y_true: np.ndarray, y_proba: np.ndarray) -> dict:
+def compute_metrics(y_true: np.ndarray, y_proba: np.ndarray, eval_df: pd.DataFrame = None) -> dict:
     """
     在真实分布下计算指标。
     """
     if y_true.sum() == 0:
         return {k: None for k in
-                ["roc_auc", "pr_auc", "p_at_100", "p_at_500", "recall_at_100"]}
+                ["roc_auc", "pr_auc", "p_at_10", "p_at_50", "p_at_100", "p_at_500", "recall_at_10", "recall_at_50", "recall_at_100"]}
 
-    roc = roc_auc_score(y_true, y_proba)
-    pr = average_precision_score(y_true, y_proba)
-
-    sorted_idx = np.argsort(y_proba)[::-1]
-
-    def precision_at_k(k):
-        if len(y_true) < k:
-            return None
-        return y_true[sorted_idx[:k]].sum() / k
-
-    def recall_at_k(k):
-        if y_true.sum() == 0 or len(y_true) < k:
-            return None
-        return y_true[sorted_idx[:k]].sum() / y_true.sum()
-
-    return {
-        "roc_auc": roc,
-        "pr_auc": pr,
-        "p_at_100": precision_at_k(100),
-        "p_at_500": precision_at_k(500),
-        "recall_at_100": recall_at_k(100),
-        "total_pos": int(y_true.sum()),
-        "total_samples": len(y_true),
-    }
+    metrics = evaluate_predictions(y_true, y_proba, eval_df=eval_df, k_values=[10, 50, 100, 500])
+    metrics["p_at_10"] = metrics.get("precision_at_10")
+    metrics["p_at_50"] = metrics.get("precision_at_50")
+    metrics["p_at_100"] = metrics.get("precision_at_100")
+    metrics["p_at_500"] = metrics.get("precision_at_500")
+    metrics["recall_at_10"] = metrics.get("recall_at_10")
+    metrics["recall_at_50"] = metrics.get("recall_at_50")
+    metrics["recall_at_100"] = metrics.get("recall_at_100")
+    return metrics
 
 
 # ================================================================
 # 主流程
 # ================================================================
 def run_rolling_cv():
+    import joblib
+    import lightgbm as lgb
+
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
     Path(MODEL_DIR).mkdir(parents=True, exist_ok=True)
 
@@ -151,6 +139,9 @@ def run_rolling_cv():
 
     # 确定可用月份
     common_months = sorted(train_monthly.keys())
+    if not common_months:
+        raise ValueError("未找到训练月份，请检查 data/daily_train_undersampled/01..12")
+
     print(f"可用月份: {common_months[0]} ~ {common_months[-1]} ({len(common_months)} 个月)")
 
     if len(common_months) <= MIN_TRAIN_MONTHS:
@@ -257,7 +248,7 @@ def run_rolling_cv():
 
         # 评估
         y_proba = model.predict_proba(X_val)[:, 1]
-        metrics = compute_metrics(y_val, y_proba)
+        metrics = compute_metrics(y_val, y_proba, eval_df=val_df)
 
         print(f"\n  ── 真实分布下的指标 ──")
         print(f"  ROC-AUC:       {metrics['roc_auc']:.4f}")
@@ -290,8 +281,8 @@ def run_rolling_cv():
         return None
 
     results_df = pd.DataFrame(all_results)
-    results_path = f"{OUTPUT_DIR}/results_fixed.csv"
-    results_df.to_csv(results_path, index=False)
+    results_path = f"{OUTPUT_DIR}/results.csv"
+    write_csv(results_df, results_path)
 
     print("\n" + "=" * 65)
     print("滚动验证完成 — 真实分布下的指标汇总")
@@ -309,5 +300,14 @@ def run_rolling_cv():
     return results_df
 
 
-if __name__ == "__main__":
+def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="滚动验证 - CSV workflow")
+    parser.add_argument("--run", action="store_true", help="保留兼容参数；脚本默认执行滚动验证")
+    parser.parse_args()
     run_rolling_cv()
+
+
+if __name__ == "__main__":
+    main()

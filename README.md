@@ -91,18 +91,30 @@
 ```
 data/
 ├── daily_train_candidates/      # 候选训练集（未欠采样，事件样本）
-│   ├── 2025-01-02_candidate.parquet
-│   └── ...
+│   ├── 01/
+│   │   ├── 2025-01-02_candidate.csv
+│   │   └── ...
 ├── daily_train_undersampled/    # 欠采样训练集分片
-│   ├── 2025-01-02_train.parquet
-│   └── ...
+│   ├── 01/
+│   │   ├── 2025-01-02_train.csv
+│   │   └── ...
 ├── logs/                        # 统计日志
-│   ├── 2025-01-02_summary.csv
-│   └── ...
+│   ├── 01/
+│   │   ├── 2025-01-02_summary.csv
+│   │   └── ...
 ├── merged/                      # 合并后的多日训练集
-│   └── multi_day_train.parquet
+│   └── multi_day_train.csv
 └── temp_extract/               # 临时解压目录（自动清理）
 ```
+
+---
+
+## CSV数据规范
+
+- 本项目以 CSV 作为标准数据格式，默认输出后缀统一为 `.csv`。
+- 项目生成的 CSV 使用 `utf-8-sig` 编码，兼容 UTF-8，同时便于 Windows/Excel 打开中文字段。
+- 读取包含 `code` 的 CSV 时，股票代码按字符串读取，确保 `000001` 不会变成 `1`。
+- 月份目录统一使用两位格式：`01` 到 `12`。历史 `*_old` 数据不会自动删除。
 
 ---
 
@@ -145,7 +157,7 @@ python scripts/training_set_builder.py \
 python scripts/training_set_builder.py \
   --mode merge \
   --shards-dir "d:/Qoder-project/deep project/data/daily_train_undersampled" \
-  --merged-output "d:/Qoder-project/deep project/data/merged/multi_day_train.parquet"
+  --merged-output "d:/Qoder-project/deep project/data/merged/multi_day_train.csv"
 ```
 
 ---
@@ -298,7 +310,7 @@ deep project/
 ├── 2026/                         # 2026年数据文件
 ├── main.py                       # 主程序入口
 ├── run_system.py                 # 系统运行脚本
-├── train_model.py                # 模型训练脚本
+├── train_model.py                # 兼容包装；推荐使用 main.py --mode train
 ├── build_2025_dataset.py         # 批量数据集构建
 ├── requirements.txt              # 依赖配置
 └── README.md                     # 项目说明
@@ -381,10 +393,10 @@ python scripts/training_set_builder.py \
 python scripts/training_set_builder.py \
   --mode merge \
   --shards-dir "d:/Qoder-project/deep project/data/daily_train_undersampled" \
-  --merged-output "d:/Qoder-project/deep project/data/merged/multi_day_train.parquet"
+  --merged-output "d:/Qoder-project/deep project/data/merged/multi_day_train.csv"
 
 # 6. 模型训练
-python train_model.py --mode split --input data/merged/multi_day_train.parquet
+python main.py --mode train --input data/merged/multi_day_train.csv
 ```
 
 ### 日志分析
@@ -395,7 +407,7 @@ V3.2版本的统计日志包含特有字段：
 import pandas as pd
 
 # 读取V3.2统计日志
-log_df = pd.read_csv("data/logs/2025-01-02_summary.csv")
+log_df = pd.read_csv("data/logs/01/2025-01-02_summary.csv", encoding="utf-8-sig", dtype={"code": "string"})
 print(log_df[['date', 'version', 'first_touch_events', 'unique_stocks', 'sample_purity']])
 ```
 

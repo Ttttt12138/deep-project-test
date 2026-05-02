@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Tuple, List
 import os
 
+from src.data_processing.csv_utils import read_csv
+
 
 def load_csv_data(file_path: str) -> pd.DataFrame:
     """
@@ -21,7 +23,7 @@ def load_csv_data(file_path: str) -> pd.DataFrame:
         原始DataFrame
     """
     try:
-        df = pd.read_csv(file_path)
+        df = read_csv(file_path)
         return df
     except Exception as e:
         raise ValueError(f"加载数据失败: {e}")

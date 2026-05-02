@@ -20,6 +20,11 @@ warnings.filterwarnings('ignore')
 
 # 项目根目录
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
+
+from src.data_processing.csv_utils import get_feature_columns, read_csv, write_csv
+
 DATA_DIR = os.path.join(PROJECT_ROOT, 'data')
 UNDERSAMPLED_DIR = os.path.join(DATA_DIR, 'daily_train_undersampled')
 MERGED_DIR = os.path.join(DATA_DIR, 'merged')
@@ -59,7 +64,7 @@ def collect_csv_files() -> list:
 
 
 def merge_and_save():
-    """合并所有CSV并保存为parquet"""
+    """合并所有CSV并保存为CSV"""
     start_time = datetime.now()
 
     # 确保输出目录存在
@@ -81,7 +86,7 @@ def merge_and_save():
 
     for csv_file in tqdm(csv_files, desc="读取CSV"):
         try:
-            df = pd.read_csv(csv_file)
+            df = read_csv(csv_file)
 
             # 添加月份列（如果不存在）
             if 'month' not in df.columns:
@@ -114,7 +119,7 @@ def merge_and_save():
     print("合并完成!")
     print("="*60)
     print(f"总样本数: {len(merged_df):,}")
-    print(f"总特征数: {len([c for c in merged_df.columns if c not in ['label', 'date', 'month', 'code', 'time', 'window_start_time', 'window_end_time']])}")
+    print(f"总特征数: {len(get_feature_columns(merged_df))}")
     print(f"日期范围: {merged_df['date'].min()} ~ {merged_df['date'].max()}")
     print(f"月份分布:\n{merged_df['month'].value_counts().sort_index().to_string()}")
 
@@ -128,7 +133,7 @@ def merge_and_save():
 
     # 保存为CSV
     print(f"\n保存到: {OUTPUT_FILE}")
-    merged_df.to_csv(OUTPUT_FILE, index=False)
+    write_csv(merged_df, OUTPUT_FILE)
 
     elapsed = (datetime.now() - start_time).total_seconds()
     print(f"\n耗时: {elapsed:.1f} 秒")

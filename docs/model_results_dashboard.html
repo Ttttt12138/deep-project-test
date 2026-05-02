@@ -1,0 +1,935 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>模型结果仪表盘</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --surface: #ffffff;
+      --surface-soft: #f8fafc;
+      --ink: #162033;
+      --muted: #647086;
+      --line: #d9e1ec;
+      --teal: #0f766e;
+      --blue: #2563eb;
+      --amber: #b45309;
+      --rose: #be123c;
+      --green: #15803d;
+      --shadow: 0 10px 26px rgba(21, 32, 51, 0.07);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(245, 247, 251, 0.94);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(10px);
+    }
+
+    .topbar-inner {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 14px 18px;
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      min-width: 220px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .tabs {
+      display: inline-grid;
+      grid-template-columns: repeat(3, minmax(88px, 1fr));
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--surface);
+      box-shadow: 0 1px 2px rgba(21, 32, 51, 0.04);
+    }
+
+    .tab {
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      padding: 7px 10px;
+      white-space: nowrap;
+    }
+
+    .tab.active {
+      background: #e8f3f1;
+      color: var(--teal);
+      font-weight: 700;
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px 18px 32px;
+    }
+
+    section {
+      margin: 0 0 18px;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 12px;
+      margin: 16px 0 10px;
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .section-head .meta {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .kpis {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .two-col {
+      grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+    }
+
+    .three-col {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .tile,
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .tile {
+      padding: 14px;
+      min-height: 112px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 8px;
+    }
+
+    .tile .label,
+    .panel .label {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .tile .value {
+      align-self: center;
+      font-size: 30px;
+      line-height: 1;
+      font-weight: 800;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tile .value.small {
+      font-size: 24px;
+    }
+
+    .delta {
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .delta.warn { color: var(--amber); }
+    .delta.risk { color: var(--rose); }
+
+    .panel {
+      padding: 14px;
+      min-width: 0;
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .panel-title h3 {
+      margin: 0;
+      font-size: 15px;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 260px;
+    }
+
+    .short-canvas {
+      height: 210px;
+    }
+
+    .tall-canvas {
+      height: 340px;
+    }
+
+    .score-row {
+      display: grid;
+      grid-template-columns: 98px 1fr 64px;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0;
+      font-size: 13px;
+    }
+
+    .track {
+      height: 10px;
+      background: #e9eef5;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .fill {
+      height: 100%;
+      border-radius: 999px;
+      background: var(--teal);
+    }
+
+    .fill.blue { background: var(--blue); }
+    .fill.amber { background: var(--amber); }
+    .fill.rose { background: var(--rose); }
+
+    .value-cell {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      table-layout: fixed;
+    }
+
+    th,
+    td {
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      vertical-align: middle;
+    }
+
+    th {
+      color: var(--muted);
+      font-weight: 700;
+      background: var(--surface-soft);
+    }
+
+    th:first-child,
+    td:first-child {
+      text-align: left;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 22px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #e8f3f1;
+      color: var(--teal);
+      font-size: 12px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .badge.blue {
+      background: #e9efff;
+      color: var(--blue);
+    }
+
+    .badge.amber {
+      background: #fff4df;
+      color: var(--amber);
+    }
+
+    .note-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .note {
+      padding: 14px;
+      border-left: 4px solid var(--teal);
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .note.amber {
+      border-left-color: var(--amber);
+    }
+
+    .note h3 {
+      margin: 0 0 6px;
+      font-size: 15px;
+    }
+
+    .note p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 920px) {
+      .topbar-inner {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .tabs {
+        width: 100%;
+      }
+
+      .kpis,
+      .three-col,
+      .two-col,
+      .note-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 620px) {
+      main {
+        padding: 12px 12px 28px;
+      }
+
+      .kpis,
+      .three-col,
+      .two-col,
+      .note-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section-head {
+        align-items: start;
+        flex-direction: column;
+      }
+
+      .section-head .meta {
+        text-align: left;
+      }
+
+      .tabs {
+        grid-template-columns: 1fr;
+      }
+
+      .tile .value {
+        font-size: 28px;
+      }
+
+      canvas,
+      .short-canvas,
+      .tall-canvas {
+        height: 240px;
+      }
+
+      table {
+        min-width: 680px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <h1>模型结果仪表盘</h1>
+        <p>LightGBM 2025 H1 tuned · Rolling CV 对照</p>
+      </div>
+      <nav class="tabs" aria-label="视图切换">
+        <button class="tab active" data-view="overview">总览</button>
+        <button class="tab" data-view="topk">Top-K</button>
+        <button class="tab" data-view="rolling">Rolling CV</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section data-section="overview">
+      <div class="section-head">
+        <h2>H1 Tuned 测试集</h2>
+        <div class="meta">test 7,482 · positive 1,247 · features 92</div>
+      </div>
+
+      <div class="grid kpis">
+        <article class="tile">
+          <div class="label">ROC-AUC</div>
+          <div class="value">0.9915</div>
+          <div class="delta">排序区分度强</div>
+        </article>
+        <article class="tile">
+          <div class="label">PR-AUC</div>
+          <div class="value">0.9578</div>
+          <div class="delta">优于 LR +0.0431</div>
+        </article>
+        <article class="tile">
+          <div class="label">F1 Score</div>
+          <div class="value">0.9055</div>
+          <div class="delta">precision 0.9002 · recall 0.9110</div>
+        </article>
+        <article class="tile">
+          <div class="label">高置信覆盖率</div>
+          <div class="value">15.94%</div>
+          <div class="delta warn">threshold 0.7</div>
+        </article>
+      </div>
+
+      <div class="grid two-col" style="margin-top: 12px;">
+        <article class="panel">
+          <div class="panel-title">
+            <h3>Baseline PR-AUC 对比</h3>
+            <span class="badge">LightGBM 最优</span>
+          </div>
+          <canvas id="baselineChart" class="short-canvas"></canvas>
+        </article>
+        <article class="panel">
+          <div class="panel-title">
+            <h3>分类指标</h3>
+            <span class="badge blue">test set</span>
+          </div>
+          <div class="score-row"><span>Accuracy</span><div class="track"><div class="fill blue" style="width:96.83%"></div></div><span class="value-cell">0.9683</span></div>
+          <div class="score-row"><span>Precision</span><div class="track"><div class="fill" style="width:90.02%"></div></div><span class="value-cell">0.9002</span></div>
+          <div class="score-row"><span>Recall</span><div class="track"><div class="fill" style="width:91.10%"></div></div><span class="value-cell">0.9110</span></div>
+          <div class="score-row"><span>F1</span><div class="track"><div class="fill" style="width:90.55%"></div></div><span class="value-cell">0.9055</span></div>
+          <div class="score-row"><span>P@0.7</span><div class="track"><div class="fill amber" style="width:92.71%"></div></div><span class="value-cell">0.9271</span></div>
+          <div class="score-row"><span>R@0.7</span><div class="track"><div class="fill amber" style="width:88.69%"></div></div><span class="value-cell">0.8869</span></div>
+        </article>
+      </div>
+
+      <div class="grid two-col" style="margin-top: 12px;">
+        <article class="panel">
+          <div class="panel-title">
+            <h3>Top 特征重要性</h3>
+            <span class="badge amber">Top 12</span>
+          </div>
+          <canvas id="featureChart" class="tall-canvas"></canvas>
+        </article>
+        <article class="panel">
+          <div class="panel-title">
+            <h3>模型文件</h3>
+            <span class="badge blue">2026-05-01</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>输出</th>
+                  <th>路径</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>模型</td>
+                  <td>models\lgbm_2025_H1_tuned.pkl</td>
+                </tr>
+                <tr>
+                  <td>Baseline</td>
+                  <td>models\lgbm_2025_H1_tuned_baselines.csv</td>
+                </tr>
+                <tr>
+                  <td>特征重要性</td>
+                  <td>models\lgbm_2025_H1_tuned_feature_importance.csv</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section data-section="topk">
+      <div class="section-head">
+        <h2>Top-K 命中效果</h2>
+        <div class="meta">全局排序 · 按日排序</div>
+      </div>
+
+      <div class="grid kpis">
+        <article class="tile">
+          <div class="label">Global Top10</div>
+          <div class="value">10 / 10</div>
+          <div class="delta">Precision@10 = 1.0000</div>
+        </article>
+        <article class="tile">
+          <div class="label">Global Top50</div>
+          <div class="value">50 / 50</div>
+          <div class="delta">Precision@50 = 1.0000</div>
+        </article>
+        <article class="tile">
+          <div class="label">Daily Top10</div>
+          <div class="value">9.78</div>
+          <div class="delta">平均每日命中数</div>
+        </article>
+        <article class="tile">
+          <div class="label">Daily Top50</div>
+          <div class="value">47.44</div>
+          <div class="delta">平均每日命中数</div>
+        </article>
+      </div>
+
+      <div class="grid two-col" style="margin-top: 12px;">
+        <article class="panel">
+          <div class="panel-title">
+            <h3>Daily Precision / Recall</h3>
+            <span class="badge">LightGBM</span>
+          </div>
+          <canvas id="dailyChart"></canvas>
+        </article>
+        <article class="panel">
+          <div class="panel-title">
+            <h3>Baseline Daily Top10</h3>
+            <span class="badge blue">precision</span>
+          </div>
+          <canvas id="dailyBaselineChart"></canvas>
+        </article>
+      </div>
+
+      <div class="grid three-col" style="margin-top: 12px;">
+        <article class="panel">
+          <div class="panel-title">
+            <h3>Rule</h3>
+            <span class="badge amber">PR-AUC 0.2805</span>
+          </div>
+          <div class="score-row"><span>Daily P@10</span><div class="track"><div class="fill amber" style="width:50.56%"></div></div><span class="value-cell">0.5056</span></div>
+          <div class="score-row"><span>Daily R@10</span><div class="track"><div class="fill amber" style="width:7.67%"></div></div><span class="value-cell">0.0767</span></div>
+        </article>
+        <article class="panel">
+          <div class="panel-title">
+            <h3>Logistic Regression</h3>
+            <span class="badge blue">PR-AUC 0.9147</span>
+          </div>
+          <div class="score-row"><span>Daily P@10</span><div class="track"><div class="fill blue" style="width:96.67%"></div></div><span class="value-cell">0.9667</span></div>
+          <div class="score-row"><span>Daily R@10</span><div class="track"><div class="fill blue" style="width:14.84%"></div></div><span class="value-cell">0.1484</span></div>
+        </article>
+        <article class="panel">
+          <div class="panel-title">
+            <h3>LightGBM</h3>
+            <span class="badge">PR-AUC 0.9578</span>
+          </div>
+          <div class="score-row"><span>Daily P@10</span><div class="track"><div class="fill" style="width:97.78%"></div></div><span class="value-cell">0.9778</span></div>
+          <div class="score-row"><span>Daily R@10</span><div class="track"><div class="fill" style="width:15.00%"></div></div><span class="value-cell">0.1500</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section data-section="rolling">
+      <div class="section-head">
+        <h2>Rolling CV 真实候选分布</h2>
+        <div class="meta">fold1 2025-04 · fold2 2025-05 · fold3 2025-06</div>
+      </div>
+
+      <div class="grid kpis">
+        <article class="tile">
+          <div class="label">Rolling 平均 ROC-AUC</div>
+          <div class="value">0.9945</div>
+          <div class="delta">3 folds</div>
+        </article>
+        <article class="tile">
+          <div class="label">Rolling 平均 PR-AUC</div>
+          <div class="value">0.1076</div>
+          <div class="delta warn">真实候选池口径</div>
+        </article>
+        <article class="tile">
+          <div class="label">Rolling 平均 P@100</div>
+          <div class="value">0.3233</div>
+          <div class="delta">Top100 平均 32.33 命中</div>
+        </article>
+        <article class="tile">
+          <div class="label">Rolling 平均 P@500</div>
+          <div class="value">0.2447</div>
+          <div class="delta">Top500 平均 122.33 命中</div>
+        </article>
+      </div>
+
+      <div class="grid two-col" style="margin-top: 12px;">
+        <article class="panel">
+          <div class="panel-title">
+            <h3>Rolling 指标趋势</h3>
+            <span class="badge">PR-AUC / P@100 / P@500</span>
+          </div>
+          <canvas id="rollingChart"></canvas>
+        </article>
+        <article class="panel">
+          <div class="panel-title">
+            <h3>Fold 明细</h3>
+            <span class="badge blue">Expanding Window</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>验证月</th>
+                  <th>训练月数</th>
+                  <th>验证样本</th>
+                  <th>正样本</th>
+                  <th>PR-AUC</th>
+                  <th>P@100</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>2025-04</td>
+                  <td>3</td>
+                  <td>11,835,801</td>
+                  <td>2,798</td>
+                  <td>0.1020</td>
+                  <td>0.4100</td>
+                </tr>
+                <tr>
+                  <td>2025-05</td>
+                  <td>4</td>
+                  <td>6,082,528</td>
+                  <td>1,393</td>
+                  <td>0.1017</td>
+                  <td>0.2500</td>
+                </tr>
+                <tr>
+                  <td>2025-06</td>
+                  <td>5</td>
+                  <td>6,775,488</td>
+                  <td>1,428</td>
+                  <td>0.1193</td>
+                  <td>0.3100</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </div>
+
+      <div class="grid note-grid" style="margin-top: 12px;">
+        <article class="note amber">
+          <h3>评估口径差异</h3>
+          <p>H1 tuned 测试集正样本率约 16.67%；Rolling CV 验证集是百万级真实候选池，正样本率约 0.02%。PR-AUC 不能跨口径直接等价比较。</p>
+        </article>
+        <article class="note">
+          <h3>实际使用侧重点</h3>
+          <p>少量高置信筛选看 Daily Precision@10；真实候选池上线前重点看 Rolling PR-AUC、P@100、P@500 和按月稳定性。</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const palette = {
+      teal: "#0f766e",
+      blue: "#2563eb",
+      amber: "#b45309",
+      rose: "#be123c",
+      grid: "#d9e1ec",
+      muted: "#647086",
+      ink: "#162033"
+    };
+
+    const baseline = [
+      { model: "rule", pr: 0.2805, dailyP10: 0.5056 },
+      { model: "logistic", pr: 0.9147, dailyP10: 0.9667 },
+      { model: "lightgbm", pr: 0.9578, dailyP10: 0.9778 }
+    ];
+
+    const features = [
+      ["ret_20tick_last", 295],
+      ["spread_pct_last", 240],
+      ["ticks_to_limit_current_last", 225],
+      ["dist_to_limit_last", 218],
+      ["near_limit_big_ask_ratio_last", 214],
+      ["minutes_from_open_last", 212],
+      ["ret_3tick_last", 161],
+      ["ret_5tick_last", 153],
+      ["high_to_limit_20tick_last", 150],
+      ["minutes_to_close_last", 148],
+      ["spread_pct_trend", 145],
+      ["high_to_limit_10tick_last", 137]
+    ];
+
+    const rolling = [
+      { month: "2025-04", pr: 0.1020, p100: 0.4100, p500: 0.2760, roc: 0.9938 },
+      { month: "2025-05", pr: 0.1017, p100: 0.2500, p500: 0.2120, roc: 0.9949 },
+      { month: "2025-06", pr: 0.1193, p100: 0.3100, p500: 0.2460, roc: 0.9948 }
+    ];
+
+    function setupCanvas(canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(rect.width * ratio));
+      canvas.height = Math.max(1, Math.round(rect.height * ratio));
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      return { ctx, w: rect.width, h: rect.height };
+    }
+
+    function text(ctx, value, x, y, opts = {}) {
+      ctx.fillStyle = opts.color || palette.ink;
+      ctx.font = `${opts.weight || 500} ${opts.size || 12}px "Segoe UI", "Microsoft YaHei", Arial`;
+      ctx.textAlign = opts.align || "left";
+      ctx.textBaseline = opts.baseline || "middle";
+      ctx.fillText(value, x, y);
+    }
+
+    function drawBars(canvasId, rows, options = {}) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const { ctx, w, h } = setupCanvas(canvas);
+      ctx.clearRect(0, 0, w, h);
+      const pad = { top: 18, right: 64, bottom: 30, left: options.left || 88 };
+      const max = options.max || Math.max(...rows.map(r => r.value));
+      const areaW = w - pad.left - pad.right;
+      const barH = Math.min(34, (h - pad.top - pad.bottom) / rows.length * 0.56);
+      rows.forEach((row, i) => {
+        const y = pad.top + i * ((h - pad.top - pad.bottom) / rows.length) + barH * 0.5;
+        const barW = areaW * (row.value / max);
+        text(ctx, row.label, 0, y + barH / 2, { color: palette.muted, size: 12 });
+        ctx.fillStyle = "#e9eef5";
+        roundRect(ctx, pad.left, y, areaW, barH, 6);
+        ctx.fill();
+        ctx.fillStyle = row.color || palette.teal;
+        roundRect(ctx, pad.left, y, Math.max(2, barW), barH, 6);
+        ctx.fill();
+        text(ctx, row.value.toFixed(options.digits ?? 4), w - 8, y + barH / 2, {
+          align: "right",
+          weight: 700,
+          size: 12
+        });
+      });
+    }
+
+    function drawGroupedBars(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const { ctx, w, h } = setupCanvas(canvas);
+      ctx.clearRect(0, 0, w, h);
+      const pad = { top: 18, right: 22, bottom: 46, left: 44 };
+      const areaW = w - pad.left - pad.right;
+      const areaH = h - pad.top - pad.bottom;
+      drawYAxis(ctx, pad, areaH, 1);
+      const groups = [
+        { label: "P@10", values: [0.9778, 0.1500], colors: [palette.teal, palette.blue] },
+        { label: "P@50", values: [0.9489, 0.7239], colors: [palette.teal, palette.blue] }
+      ];
+      const groupW = areaW / groups.length;
+      groups.forEach((group, i) => {
+        const gx = pad.left + i * groupW + groupW * 0.22;
+        const bw = Math.min(42, groupW * 0.18);
+        group.values.forEach((value, j) => {
+          const x = gx + j * (bw + 12);
+          const bh = areaH * value;
+          ctx.fillStyle = group.colors[j];
+          roundRect(ctx, x, pad.top + areaH - bh, bw, bh, 5);
+          ctx.fill();
+          text(ctx, value.toFixed(3), x + bw / 2, pad.top + areaH - bh - 8, {
+            align: "center",
+            size: 11,
+            weight: 700
+          });
+        });
+        text(ctx, group.label, pad.left + i * groupW + groupW / 2, h - 18, {
+          align: "center",
+          color: palette.muted,
+          size: 12
+        });
+      });
+      legend(ctx, [
+        ["Precision", palette.teal],
+        ["Recall", palette.blue]
+      ], pad.left, 14);
+    }
+
+    function drawDailyBaseline(canvasId) {
+      drawBars(canvasId, baseline.map((row, idx) => ({
+        label: row.model,
+        value: row.dailyP10,
+        color: [palette.amber, palette.blue, palette.teal][idx]
+      })), { max: 1, left: 70 });
+    }
+
+    function drawFeatureChart() {
+      drawBars("featureChart", features.map((row, idx) => ({
+        label: row[0],
+        value: row[1],
+        color: idx < 6 ? palette.teal : palette.blue
+      })), { max: 310, left: 178, digits: 0 });
+    }
+
+    function drawLineChart(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      const { ctx, w, h } = setupCanvas(canvas);
+      ctx.clearRect(0, 0, w, h);
+      const pad = { top: 22, right: 28, bottom: 42, left: 46 };
+      const areaW = w - pad.left - pad.right;
+      const areaH = h - pad.top - pad.bottom;
+      drawYAxis(ctx, pad, areaH, 0.45);
+      const series = [
+        { key: "pr", label: "PR-AUC", color: palette.teal },
+        { key: "p100", label: "P@100", color: palette.blue },
+        { key: "p500", label: "P@500", color: palette.amber }
+      ];
+      series.forEach(s => {
+        ctx.beginPath();
+        rolling.forEach((point, i) => {
+          const x = pad.left + (areaW / (rolling.length - 1)) * i;
+          const y = pad.top + areaH - (point[s.key] / 0.45) * areaH;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+        rolling.forEach((point, i) => {
+          const x = pad.left + (areaW / (rolling.length - 1)) * i;
+          const y = pad.top + areaH - (point[s.key] / 0.45) * areaH;
+          ctx.fillStyle = s.color;
+          ctx.beginPath();
+          ctx.arc(x, y, 4, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      });
+      rolling.forEach((point, i) => {
+        const x = pad.left + (areaW / (rolling.length - 1)) * i;
+        text(ctx, point.month.slice(5), x, h - 18, { align: "center", color: palette.muted, size: 12 });
+      });
+      legend(ctx, series.map(s => [s.label, s.color]), pad.left, 14);
+    }
+
+    function drawYAxis(ctx, pad, areaH, max) {
+      ctx.strokeStyle = palette.grid;
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const value = (max / 4) * i;
+        const y = pad.top + areaH - (value / max) * areaH;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(ctx.canvas.width, y);
+        ctx.stroke();
+        text(ctx, value.toFixed(max === 1 ? 2 : 2), pad.left - 8, y, {
+          align: "right",
+          color: palette.muted,
+          size: 10
+        });
+      }
+    }
+
+    function legend(ctx, items, x, y) {
+      let offset = 0;
+      items.forEach(([label, color]) => {
+        ctx.fillStyle = color;
+        roundRect(ctx, x + offset, y - 5, 16, 10, 3);
+        ctx.fill();
+        text(ctx, label, x + offset + 22, y, { color: palette.muted, size: 11 });
+        offset += 92;
+      });
+    }
+
+    function roundRect(ctx, x, y, width, height, radius) {
+      const r = Math.min(radius, width / 2, height / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + width, y, x + width, y + height, r);
+      ctx.arcTo(x + width, y + height, x, y + height, r);
+      ctx.arcTo(x, y + height, x, y, r);
+      ctx.arcTo(x, y, x + width, y, r);
+      ctx.closePath();
+    }
+
+    function renderCharts() {
+      drawBars("baselineChart", baseline.map((row, idx) => ({
+        label: row.model,
+        value: row.pr,
+        color: [palette.amber, palette.blue, palette.teal][idx]
+      })), { max: 1, left: 70 });
+      drawFeatureChart();
+      drawGroupedBars("dailyChart");
+      drawDailyBaseline("dailyBaselineChart");
+      drawLineChart("rollingChart");
+    }
+
+    document.querySelectorAll(".tab").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach(item => item.classList.remove("active"));
+        button.classList.add("active");
+        const view = button.dataset.view;
+        document.querySelectorAll("[data-section]").forEach(section => {
+          section.classList.toggle("hidden", view !== "overview" && section.dataset.section !== view);
+        });
+        if (view === "overview") {
+          document.querySelectorAll("[data-section]").forEach(section => section.classList.remove("hidden"));
+        }
+        requestAnimationFrame(renderCharts);
+      });
+    });
+
+    window.addEventListener("resize", () => requestAnimationFrame(renderCharts));
+    renderCharts();
+  </script>
+</body>
+</html>

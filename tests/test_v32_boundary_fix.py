@@ -45,10 +45,9 @@ def test_boundary_positive_sample_protection():
             assert is_preserved, f"正样本 {idx} 应该被保留，但被过滤了"
 
         print("[OK] 边界位置正样本保护测试通过")
-        return True
     else:
         print("[FAIL] 没有检测到正样本")
-        return False
+        assert False, "应该检测到边界位置正样本"
 
 
 def test_early_boundary_positive_sample():
@@ -82,10 +81,9 @@ def test_early_boundary_positive_sample():
             assert is_preserved, f"正样本 {idx} 应该被保留，但被过滤了"
 
         print("[OK] 早盘边界正样本保护测试通过")
-        return True
     else:
         print("[FAIL] 没有检测到正样本")
-        return False
+        assert False, "应该检测到早盘边界正样本"
 
 
 def test_last_tick_protection():
@@ -120,10 +118,9 @@ def test_last_tick_protection():
             assert is_preserved, f"正样本 {idx} 应该被保留，但被过滤了"
 
         print("[OK] 最后一个tick保护测试通过")
-        return True
     else:
         print("[FAIL] 没有检测到正样本")
-        return False
+        assert False, "应该检测到最后一个有意义tick前的正样本"
 
 
 def test_negative_sample_boundary_filtering():
@@ -155,7 +152,6 @@ def test_negative_sample_boundary_filtering():
     # 最后一个tick应该被过滤（没有正样本，且不是困难负样本）
     assert not last_tick_preserved, "最后一个普通负样本应该被过滤"
     print("[OK] 负样本边界过滤测试通过")
-    return True
 
 
 if __name__ == "__main__":
@@ -164,10 +160,14 @@ if __name__ == "__main__":
     print("="*60)
 
     all_passed = True
-    all_passed &= test_boundary_positive_sample_protection()
-    all_passed &= test_early_boundary_positive_sample()
-    all_passed &= test_last_tick_protection()
-    all_passed &= test_negative_sample_boundary_filtering()
+    try:
+        test_boundary_positive_sample_protection()
+        test_early_boundary_positive_sample()
+        test_last_tick_protection()
+        test_negative_sample_boundary_filtering()
+    except AssertionError:
+        all_passed = False
+        raise
 
     print("\n" + "="*60)
     if all_passed:

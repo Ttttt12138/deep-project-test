@@ -8,6 +8,7 @@ import numpy as np
 from typing import Tuple, Dict
 import os
 from decimal import Decimal, ROUND_HALF_UP
+from src.data_processing.csv_utils import read_csv
 
 
 def load_tick_csv(file_path: str) -> pd.DataFrame:
@@ -27,7 +28,7 @@ def load_tick_csv(file_path: str) -> pd.DataFrame:
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"文件不存在: {file_path}")
 
-    df = pd.read_csv(file_path)
+    df = read_csv(file_path, preserve_code=False)
 
     if df.empty:
         raise ValueError("文件为空")
@@ -232,7 +233,7 @@ def create_mock_tick_data(num_ticks: int = 100) -> pd.DataFrame:
     Returns:
         模拟DataFrame
     """
-    base_time = pd.to_datetime('2025-01-02 09:15:00')
+    base_time = pd.to_datetime('2025-01-02 09:30:00')
     base_price = 10.0
 
     data = []

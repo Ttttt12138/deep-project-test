@@ -7,6 +7,8 @@ import py7zr
 import os
 import pandas as pd
 
+from src.data_processing.csv_utils import read_csv
+
 def explore_sample_data(data_dir):
     """探索数据结构"""
 
@@ -43,7 +45,7 @@ def explore_sample_data(data_dir):
                     print(f"\n查看CSV文件: {csv_path}")
 
                     # 读取前几行
-                    df = pd.read_csv(csv_path, nrows=10)
+                    df = read_csv(csv_path, nrows=10, preserve_code=False)
                     print(f"列名: {list(df.columns)}")
                     print(f"数据形状: {df.shape}")
                     print(f"前5行数据:")

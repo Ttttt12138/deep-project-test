@@ -21,6 +21,11 @@ from src.feature_engineering.limit_up_features import extract_limit_up_features
 from src.feature_engineering.limit_up_labels import (
     generate_next_tick_limit_up_label, get_label_statistics
 )
+from src.data_processing.csv_utils import (
+    get_feature_columns as get_csv_feature_columns,
+    read_csv,
+    write_csv,
+)
 
 
 def process_single_stock_csv(file_path: str,
@@ -130,10 +135,7 @@ def get_feature_columns(df: pd.DataFrame) -> List[str]:
     Returns:
         特征列名列表
     """
-    # 排除基础列：time, current, limit_price, code, date, label
-    base_cols = {'time', 'current', 'limit_price', 'code', 'date', 'label'}
-    feature_cols = [col for col in df.columns if col not in base_cols]
-    return feature_cols
+    return get_csv_feature_columns(df)
 
 
 def save_dataset(df: pd.DataFrame, output_path: str):
@@ -145,13 +147,14 @@ def save_dataset(df: pd.DataFrame, output_path: str):
         output_path: 输出文件路径
     """
     # 确保输出目录存在
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
 
-    # 根据文件扩展名选择格式
-    if output_path.endswith('.parquet'):
-        df.to_parquet(output_path, index=False)
-    else:
-        df.to_csv(output_path, index=False)
+    if not output_path.endswith('.csv'):
+        output_path = f"{output_path}.csv"
+
+    write_csv(df, output_path)
 
     print(f"数据集已保存到: {output_path}")
     print(f"样本数量: {len(df)}")
@@ -175,10 +178,7 @@ def load_dataset(input_path: str) -> pd.DataFrame:
     Returns:
         数据集DataFrame
     """
-    if input_path.endswith('.parquet'):
-        df = pd.read_parquet(input_path)
-    else:
-        df = pd.read_csv(input_path)
+    df = read_csv(input_path)
 
     print(f"数据集已加载: {len(df)} 个样本")
     return df
@@ -213,6 +213,6 @@ def full_pipeline(date: str,
     # 保存结果
     output_path = os.path.join(output_dir, f"{stock_code}_{date}.csv")
     os.makedirs(output_dir, exist_ok=True)
-    df.to_csv(output_path, index=False)
+    write_csv(df, output_path)
 
     return df

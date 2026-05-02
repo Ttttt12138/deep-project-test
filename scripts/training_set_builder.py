@@ -21,9 +21,9 @@ if project_root not in sys.path:
     sys.path.append(project_root)
 
 from scripts.extract_7z import SevenZipExtractor
-from scripts.build_dataset import save_dataset, get_feature_columns
+from src.data_processing.csv_utils import month_dir_from_date, read_csv, write_csv
 from src.feature_engineering.limit_up_features import extract_limit_up_features
-from src.feature_engineering.event_driven_labels import get_event_statistics
+from src.feature_engineering.event_driven_labels import get_event_statistics, get_label_statistics
 from src.feature_engineering.event_window_builder import EventWindowBuilder  # 使用V3.2事件窗口构建器
 from src.data_processing.limit_up_processor_optimized import process_tick_file_optimized as process_tick_file
 from src.data_processing.stock_utils import determine_stock_type, get_limit_ratio
@@ -52,13 +52,14 @@ class TrainingSetBuilder:
         self.archive_path = archive_path
         self.output_base_dir = output_base_dir
         self.date_str = self._extract_date_from_filename()
+        self.month_str = month_dir_from_date(self.date_str)
         self.extractor = None
         self.extract_dir = None
 
         # 创建输出目录结构
-        self.candidates_dir = os.path.join(output_base_dir, 'daily_train_candidates')
-        self.train_shards_dir = os.path.join(output_base_dir, 'daily_train_undersampled')
-        self.logs_dir = os.path.join(output_base_dir, 'logs')
+        self.candidates_dir = os.path.join(output_base_dir, 'daily_train_candidates', self.month_str)
+        self.train_shards_dir = os.path.join(output_base_dir, 'daily_train_undersampled', self.month_str)
+        self.logs_dir = os.path.join(output_base_dir, 'logs', self.month_str)
 
         os.makedirs(self.candidates_dir, exist_ok=True)
         os.makedirs(self.train_shards_dir, exist_ok=True)
@@ -110,7 +111,7 @@ class TrainingSetBuilder:
 
             # 保存候选训练集
             candidate_path = os.path.join(self.candidates_dir, f"{self.date_str}_candidate.csv")
-            candidate_df.to_csv(candidate_path, index=False)
+            write_csv(candidate_df, candidate_path)
             print(f"  候选训练集已保存: {candidate_path}")
 
             # 执行两层欠采样（内存优化版）
@@ -120,7 +121,7 @@ class TrainingSetBuilder:
 
             # 保存欠采样训练集
             train_path = os.path.join(self.train_shards_dir, f"{self.date_str}_train.csv")
-            undersampled_df.to_csv(train_path, index=False)
+            write_csv(undersampled_df, train_path)
             print(f"  欠采样训练集已保存: {train_path}")
 
             # 生成统计日志
@@ -327,7 +328,7 @@ class TrainingSetBuilder:
     def _get_benchmark_price(self, csv_file: Path) -> float:
         """获取基准价格"""
         try:
-            df_raw = pd.read_csv(csv_file, nrows=100)
+            df_raw = read_csv(csv_file, nrows=100, preserve_code=False)
 
             # 优先级：买一价 > 卖一价 > 开盘价 > 当前价
             for price_col in ['b1_p', 'a1_p', 'open', 'current']:
@@ -541,7 +542,7 @@ class TrainingSetBuilder:
         # 保存日志文件
         log_path = os.path.join(self.logs_dir, f"{self.date_str}_summary.csv")
         log_df = pd.DataFrame([log_data])
-        log_df.to_csv(log_path, index=False)
+        write_csv(log_df, log_path)
 
         print(f"\n  日志已保存: {log_path}")
 
@@ -805,7 +806,7 @@ def build_batch_training_sets(input_dir: str, output_dir: str,
     if stats['successful'] > 0:
         print(f"\n汇总统计:")
         shards_dir = os.path.join(output_dir, 'daily_train_undersampled')
-        shard_files = sorted(Path(shards_dir).glob("*_train.csv"))
+        shard_files = sorted(Path(shards_dir).rglob("*_train.csv"))
 
         total_samples = 0
         total_positive = 0
@@ -814,7 +815,7 @@ def build_batch_training_sets(input_dir: str, output_dir: str,
         for shard_file in shard_files:
             if shard_file.stem.replace('_train', '') in stats['successful_dates']:
                 try:
-                    shard_df = pd.read_csv(shard_file)
+                    shard_df = read_csv(shard_file)
                     total_samples += len(shard_df)
                     total_positive += shard_df['label'].sum()
                     total_negative += len(shard_df) - shard_df['label'].sum()
@@ -852,7 +853,7 @@ def merge_training_shards(shards_dir: str, output_path: str) -> bool:
     print("="*80)
 
     # 查找所有训练集分片
-    shard_files = sorted(Path(shards_dir).glob("*_train.csv"))
+    shard_files = sorted(Path(shards_dir).rglob("*_train.csv"))
 
     if not shard_files:
         print("❌ 未找到训练集分片")
@@ -863,7 +864,7 @@ def merge_training_shards(shards_dir: str, output_path: str) -> bool:
     # 读取并合并
     all_data = []
     for shard_file in tqdm(shard_files, desc="读取训练集分片"):
-        shard_df = pd.read_csv(shard_file)
+        shard_df = read_csv(shard_file)
         all_data.append(shard_df)
         print(f"  {shard_file.name}: {len(shard_df):,} 样本")
 
@@ -878,7 +879,7 @@ def merge_training_shards(shards_dir: str, output_path: str) -> bool:
     # 保存
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     # 保存
-    merged_df.to_csv(output_path, index=False)
+    write_csv(merged_df, output_path)
 
     print(f"合并完成: {output_path}")
     print(f"总样本数: {len(merged_df):,}")
@@ -928,36 +929,18 @@ def extract_window_features_from_candidates(candidate_path: str, output_dir: str
     try:
         # 读取候选训练集
         print(f"读取候选训练集: {candidate_path}")
-        candidate_df = pd.read_csv(candidate_path)
+        candidate_df = read_csv(candidate_path)
         print(f"  候选训练集: {len(candidate_df)} 条记录")
 
-        # 提取窗口特征
-        print(f"\n提取窗口特征...")
-        window_extractor = OptimizedWindowFeatureExtractor(window_size=10)
-
-        # 按股票分组提取窗口特征
-        all_window_samples = []
-        for code, stock_df in tqdm(candidate_df.groupby('code'), desc="处理股票窗口特征"):
-            try:
-                window_features = window_extractor.extract_window_features(stock_df)
-                if not window_features.empty:
-                    # 添加股票代码和日期
-                    window_features['code'] = code
-                    if 'date' in stock_df.columns:
-                        window_features['date'] = stock_df['date'].iloc[0]
-
-                    all_window_samples.append(window_features)
-            except Exception as e:
-                print(f"股票 {code} 处理失败: {e}")
-                continue
-
-        if not all_window_samples:
-            print("❌ 没有生成有效的窗口特征")
+        # V3.2 candidate 文件已经是窗口样本；window 模式只重新执行欠采样。
+        required_cols = {'label', 'dist_to_limit_last'}
+        missing_cols = required_cols - set(candidate_df.columns)
+        if missing_cols:
+            print(f"❌ 候选训练集缺少窗口样本列: {sorted(missing_cols)}")
             return False
 
-        # 合并所有窗口特征
-        window_df = pd.concat(all_window_samples, ignore_index=True)
-        print(f"  窗口特征提取完成: {len(window_df)} 个样本")
+        window_df = candidate_df
+        print(f"  使用候选窗口样本: {len(window_df)} 个样本")
 
         # 执行欠采样
         print(f"\n执行欠采样...")
@@ -968,14 +951,20 @@ def extract_window_features_from_candidates(candidate_path: str, output_dir: str
         # 保存结果
         from pathlib import Path
         date_str = Path(candidate_path).stem.replace('_candidate', '')
-        train_path = os.path.join(train_shards_dir, f"{date_str}_train.csv")
-        undersampled_df.to_csv(train_path, index=False)
+        month_str = month_dir_from_date(date_str)
+        train_month_dir = os.path.join(train_shards_dir, month_str)
+        log_month_dir = os.path.join(logs_dir, month_str)
+        os.makedirs(train_month_dir, exist_ok=True)
+        os.makedirs(log_month_dir, exist_ok=True)
+
+        train_path = os.path.join(train_month_dir, f"{date_str}_train.csv")
+        write_csv(undersampled_df, train_path)
         print(f"  欠采样训练集已保存: {train_path}")
 
         # 生成统计日志
         log_stats = _generate_statistics_log(window_df, undersampled_df, sampling_stats, date_str)
-        log_path = os.path.join(logs_dir, f"{date_str}_summary.csv")
-        pd.DataFrame([log_stats]).to_csv(log_path, index=False)
+        log_path = os.path.join(log_month_dir, f"{date_str}_summary.csv")
+        write_csv(pd.DataFrame([log_stats]), log_path)
         print(f"  日志已保存: {log_path}")
 
         print(f"\n✅ 窗口特征提取完成")
@@ -1111,8 +1100,8 @@ def main():
     parser.add_argument('--input-dir', type=str,
                        help='7z文件目录 (批量处理)')
     parser.add_argument('--output', type=str,
-                       default="d:/Qoder-project/deep project/data",
-                       help='输出目录 (默认: d:/Qoder-project/deep project/data)')
+                       default="data",
+                       help='输出目录 (默认: data)')
     parser.add_argument('--mode', type=str, choices=['single', 'batch', 'merge', 'window'],
                        default='single', help='处理模式')
 
@@ -1132,7 +1121,7 @@ def main():
     parser.add_argument('--shards-dir', type=str,
                        help='训练集分片目录 (合并模式)')
     parser.add_argument('--merged-output', type=str,
-                       default="d:/Qoder-project/deep project/data/merged/multi_day_train.csv",
+                       default="data/merged/multi_day_train.csv",
                        help='合并后输出路径')
 
     # 批量处理配置
